@@ -1,33 +1,10 @@
 import cdd
-
-def foo():
-    mat = Matrix([[1.0, 0, -1], [0, 0, 1], [2, -1, 0], [0, 1, 0]])
-    mat.rep_type = cdd.RepType.INEQUALITY
-    poly = cdd.Polyhedron(mat)
-    print poly
-
-    ext = poly.get_generators()
-    print ext
-
-    mat = Matrix([[1, -1], [-2, 1]])
-    mat.obj_type = cdd.LPObjType.MAX
-    mat.obj_func = [0, 0]
-    lp = cdd.LinProg(mat)
-    lp.solve()
-    print lp.status == cdd.LPStatusType.INCONSISTENT
-    print lp.primal_solution
+import numpy as np
+from numpy import mat
+from scipy.integrate import odeint
 
 
-    mat = Matrix([[1, -1], [2, -1]])
-    mat.obj_type = cdd.LPObjType.MAX
-    mat.obj_func = [0, 0]
-    lp = cdd.LinProg(mat)
-    lp.solve()
-    print lp.status == cdd.LPStatusType.INCONSISTENT
-    print lp.primal_solution
-
-
-class Matrix(cdd.Matrix):
+class CDDMatrix(cdd.Matrix):
 
 
     def __init__(self, rows):
@@ -41,11 +18,15 @@ class Matrix(cdd.Matrix):
 
 
     def copy(self):
-        return Matrix(self)
+        return CDDMatrix(self)
 
 
 def smul(s, v):
     return [s * i for i in v]
+
+
+def dot(a, b):
+    return sum((x * y for x, y in zip(a, b)))
 
 
 def pequal(m1, m2):
@@ -95,7 +76,7 @@ def constr_it(n):
 def partition(constrs):
     part = {}
     for b in constr_it(len(constrs)):
-        mat = Matrix([smul(m, row) for row, m in zip(constrs, b)])
+        mat = CDDMatrix([smul(m, row) for row, m in zip(constrs, b)])
         if not pempty(mat):
             part[contobin(b)] = mat
 
@@ -113,4 +94,50 @@ def refine(part, constrs):
 
 
 #######
+def chunks(l, n):
+    """Yield successive n-sized chunks from l."""
+    for i in xrange(0, len(l), n):
+        yield l[i:i+n]
+
+
+def draw(pset):
+    return [4, 5]
+
+
+def amatrix(p, n):
+    return mat(list(chunks(p, n))[:-1])
+
+
+def bmatrix(p, n):
+    return mat(p[-n:]).T
+
+
+def contains(m, p):
+    return all(eq[0] + eq[1:].dot(p) >= 0 for eq in m.getA())
+
+
+class PWASystem(object):
+
+
+    def __init__(self, sconstrs, psets):
+        self.eqs = {index: {'dom': dom, 'pset': pset, 'domnp': mat(dom)}
+                    for pset, index, dom
+                    in zip(psets, *zip(*partition(sconstrs).items()))}
+
+
+    def evalf(self, x, t):
+        eq = next(e for e in self.eqs.values() if contains(e['domnp'], x))
+        p = draw(eq['pset'])
+        try:
+            n = len(x)
+        except TypeError:
+            n = 1
+        A = amatrix(p, n)
+        b = bmatrix(p, n)
+        return (A.dot(x) + b).getA()[0]
+
+
+    def integrate(self, t, x0):
+        return odeint(self.evalf, x0, t)
+
 
