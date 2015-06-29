@@ -1,7 +1,7 @@
 import cdd
 
 def foo():
-    mat = cdd.Matrix([[1.0, 0, -1], [0, 0, 1], [2, -1, 0], [0, 1, 0]])
+    mat = Matrix([[1.0, 0, -1], [0, 0, 1], [2, -1, 0], [0, 1, 0]])
     mat.rep_type = cdd.RepType.INEQUALITY
     poly = cdd.Polyhedron(mat)
     print poly
@@ -9,7 +9,7 @@ def foo():
     ext = poly.get_generators()
     print ext
 
-    mat = cdd.Matrix([[1, -1], [-2, 1]])
+    mat = Matrix([[1, -1], [-2, 1]])
     mat.obj_type = cdd.LPObjType.MAX
     mat.obj_func = [0, 0]
     lp = cdd.LinProg(mat)
@@ -18,13 +18,52 @@ def foo():
     print lp.primal_solution
 
 
-    mat = cdd.Matrix([[1, -1], [2, -1]])
+    mat = Matrix([[1, -1], [2, -1]])
     mat.obj_type = cdd.LPObjType.MAX
     mat.obj_func = [0, 0]
     lp = cdd.LinProg(mat)
     lp.solve()
     print lp.status == cdd.LPStatusType.INCONSISTENT
     print lp.primal_solution
+
+
+class Matrix(cdd.Matrix):
+
+
+    def __init__(self, rows):
+        cdd.Matrix.__init__(self, rows)
+        self.rep_type = cdd.RepType.INEQUALITY
+
+
+    def extend(self, rows):
+        cdd.Matrix.extend(self, rows)
+        return self
+
+
+    def copy(self):
+        return Matrix(self)
+
+
+def smul(s, v):
+    return [s * i for i in v]
+
+
+def pequal(m1, m2):
+    p1 = cdd.Polyhedron(m1)
+    p2 = cdd.Polyhedron(m2)
+
+    return set(p1.get_generators()) == set(p2.get_generators())
+
+
+def pempty(m):
+    if len(m.copy().canonicalize()[0]) > 0:
+        return True
+
+    m.obj_type = cdd.LPObjType.MAX
+    m.obj_func = [0 for i in range(m.col_size)]
+    lp = cdd.LinProg(m)
+    lp.solve()
+    return lp.status == cdd.LPStatusType.INCONSISTENT
 
 
 def bin(s):
@@ -53,16 +92,25 @@ def constr_it(n):
         i += 1
 
 
-def partition(constr):
-    part = []
-    for b in constr_it(len(constr)):
-        mat = cdd.Matrix([[a * m for a in row] for row, m in zip(constr, b)])
-        mat.obj_type = cdd.LPObjType.MAX
-        mat.obj_func = [0 for i in constr[0]]
-        lp = cdd.LinProg(mat)
-        lp.solve()
-        if lp.status != cdd.LPStatusType.INCONSISTENT:
-            part.append((b, mat))
+def partition(constrs):
+    part = {}
+    for b in constr_it(len(constrs)):
+        mat = Matrix([smul(m, row) for row, m in zip(constrs, b)])
+        if not pempty(mat):
+            part[contobin(b)] = mat
 
     return part
+
+
+def refine(part, constrs):
+    newpart = partition(constrs)
+
+    prod = ((a.copy().extend(b), a, i1, i2)
+            for i1, a in part.items() for i2, b in newpart.items())
+
+    return {i1 if pequal(c, a) else i1 + i2: c
+            for c, a, i1, i2 in prod if not pempty(c)}
+
+
+#######
 
