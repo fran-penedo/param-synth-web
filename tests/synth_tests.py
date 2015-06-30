@@ -18,7 +18,8 @@ def contains_test():
 def partition_test():
     constr = [[1, -1, 0], [2, -1, 0],
               [1, 0, -1], [2, 0, -1]]
-    x = set(partition(constr).keys())
+    poly = CDDMatrix([[0, 1, 0], [0, 0, 1], [3, -1, 0], [3, 0, -1]])
+    x = set(partition(poly, constr).keys())
     y = set(['0000', '0001', '0011', '0100', '0101', '0111',
              '1100', '1101', '1111'])
     assert_set_equal(x, y)
@@ -40,7 +41,8 @@ def refine_test():
     constr = [[1, -1, 0], [2, -1, 0],
               [1, 0, -1], [2, 0, -1]]
     add = [[0, -1, 1]]
-    x = set(refine(partition(constr), add).keys())
+    poly = CDDMatrix([[0, 1, 0], [0, 0, 1], [3, -1, 0], [3, 0, -1]])
+    x = set(refine(poly, partition(poly, constr), add).keys())
     y = set(['00000', '00001', '0001', '0011', '0100',
              '01010', '01011', '0111',
              '1100', '1101', '11111', '11110'])
@@ -50,22 +52,38 @@ def refine_test():
 def pwa_test():
     constr = [[1, -1, 0], [2, -1, 0],
               [1, 0, -1], [2, 0, -1]]
+    poly = CDDMatrix([[0, 1, 0], [0, 0, 1], [3, -1, 0], [3, 0, -1]])
     psets = [None for i in range(9)]
     psets[4] = 'P'
-    pwa = PWASystem(constr, psets)
+    pwa = PWASystem(poly, constr, psets)
     eq = pwa.eqs['0101']
     assert_equal(eq['pset'], 'P')
 
 
 def integrate_test():
     constr = [[5, 1]]
-    psets = [None]
-    pwa = PWASystem(constr, psets)
+    psets = [None, None]
+    poly = CDDMatrix([[1, -7], [1, 200000]], False)
+    pwa = PWASystem(poly, constr, psets)
 
     assert_equal(pwa.evalf(3, 0), 17)
 
-    print pwa.integrate(np.array([0, 2]), np.array([3]))[:,0]
-    print [3, (17 * np.exp(8) - 5)/4]
-
     assert_allclose(list(pwa.integrate(np.array([0, 2]), np.array([3]))[:,0]),
                       [3, (17 * np.exp(8) - 5)/4], rtol=1e-2)
+
+
+def pwats_test():
+    constr = [[0, 1], [-1, 1]]
+    psets = [CDDMatrix([[1, 1, 0.5]], False),
+             CDDMatrix([[1, 1, 1]], False),
+             CDDMatrix([[1, -1, 1.5]], False)]
+    poly = CDDMatrix([[1, -1], [1, 2]], False)
+    psets = map(CDDMatrixUnion, psets)
+    pwa = PWASystem(poly, constr, psets)
+    ts = PWATS(pwa)
+
+    desired = np.array([[1, 1, 0], [0, 0, 1], [1, 1, 0]])
+    assert_array_equal(ts.ts.toarray(), desired)
+
+
+

@@ -2,23 +2,37 @@ import cdd
 import numpy as np
 from numpy import mat
 from scipy.integrate import odeint
+from scipy.sparse import csr_matrix
 
 
-class CDDMatrix(cdd.Matrix):
+def CDDMatrix(rows, ineq=True):
+    m = cdd.Matrix(rows)
+    if not ineq:
+        m.rep_type = cdd.RepType.GENERATOR
+        m = cdd.Polyhedron(m).get_inequalities()
+    m.rep_type = cdd.RepType.INEQUALITY
+    return m
 
 
-    def __init__(self, rows):
-        cdd.Matrix.__init__(self, rows)
-        self.rep_type = cdd.RepType.INEQUALITY
+def vrep(m):
+    return cdd.Polyhedron(m).get_generators()
 
 
-    def extend(self, rows):
-        cdd.Matrix.extend(self, rows)
-        return self
+def extend(a, b):
+    x = a.copy()
+    x.extend(b)
+    return x
 
 
-    def copy(self):
-        return CDDMatrix(self)
+class CDDMatrixUnion(object):
+
+    def __init__(self, ms):
+        if type(ms) is not list:
+            ms = [ms]
+        self._components = ms
+
+    def components(self):
+        return self._components
 
 
 def smul(s, v):
@@ -47,8 +61,12 @@ def pempty(m):
     return lp.status == cdd.LPStatusType.INCONSISTENT
 
 
+def pinters(a, b):
+    return extend(a, b)
+
+
 def bin(s):
-    return [s] if s<=1 else bin(s>>1) + [s&1]
+    return [s] if s <= 1 else bin(s >> 1) + [s & 1]
 
 
 def binp(s, p):
@@ -73,20 +91,21 @@ def constr_it(n):
         i += 1
 
 
-def partition(constrs):
+def partition(poly, constrs):
     part = {}
     for b in constr_it(len(constrs)):
         mat = CDDMatrix([smul(m, row) for row, m in zip(constrs, b)])
-        if not pempty(mat):
-            part[contobin(b)] = mat
+        p = pinters(poly, mat)
+        if not pempty(p):
+            part[contobin(b)] = p
 
     return part
 
 
-def refine(part, constrs):
-    newpart = partition(constrs)
+def refine(poly, part, constrs):
+    newpart = partition(poly, constrs)
 
-    prod = ((a.copy().extend(b), a, i1, i2)
+    prod = ((extend(a, b), a, i1, i2)
             for i1, a in part.items() for i2, b in newpart.items())
 
     return {i1 if pequal(c, a) else i1 + i2: c
@@ -97,7 +116,7 @@ def refine(part, constrs):
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
     for i in xrange(0, len(l), n):
-        yield l[i:i+n]
+        yield l[i:i + n]
 
 
 def draw(pset):
@@ -118,14 +137,19 @@ def contains(m, p):
 
 class PWASystem(object):
 
-
-    def __init__(self, sconstrs, psets):
-        self.eqs = {index: {'dom': dom, 'pset': pset, 'domnp': mat(dom)}
+    def __init__(self, poly, sconstrs, psets):
+        self.eqs = {index: {'dom': dom,
+                            'pset': pset,
+                            'domnp': mat(dom)}
                     for pset, index, dom
-                    in zip(psets, *zip(*partition(sconstrs).items()))}
+                    in zip(psets,
+                           *zip(*sorted(partition(poly, sconstrs).items())))}
+        self.n = len(sconstrs[0]) - 1
 
+    def states(self):
+        return sorted(self.eqs.keys())
 
-    def evalf(self, x, t):
+    def evalf(self, x, t=0):
         eq = next(e for e in self.eqs.values() if contains(e['domnp'], x))
         p = draw(eq['pset'])
         try:
@@ -136,8 +160,35 @@ class PWASystem(object):
         b = bmatrix(p, n)
         return (A.dot(x) + b).getA()[0]
 
-
+    # There's actually no need for this
     def integrate(self, t, x0):
         return odeint(self.evalf, x0, t)
 
+    def connected(self, l1, l2):
+        xl2 = self.eqs[l2]['dom']
+        eq1 = self.eqs[l1]
+        for pset in eq1['pset'].components():
+            m = CDDMatrix([[1] + list(
+                amatrix(p[1:], self.n).dot(v[1:]).getA().flatten() +
+                bmatrix(p[1:], self.n))
+                for p in cdd.Polyhedron(pset).get_generators()
+                for v in cdd.Polyhedron(eq1['dom']).get_generators()])
+            m.rep_type = cdd.RepType.GENERATOR
+            hull = cdd.Polyhedron(m).get_inequalities()
+            if not pempty(pinters(hull, xl2)):
+                return True
+
+        return False
+
+
+class PWATS(object):
+
+    def __init__(self, pwa):
+        self._pwa = pwa
+        self.ts = self.build_ts(pwa)
+
+    def build_ts(self, pwa):
+        m = np.array([[1 if pwa.connected(l1, l2) else 0
+                       for l2 in pwa.states()] for l1 in pwa.states()])
+        return csr_matrix(m)
 
