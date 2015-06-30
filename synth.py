@@ -1,8 +1,12 @@
 import cdd
 import numpy as np
+try:
+    from cStringIO import StringIO
+except:
+    from StringIO import StringIO
 from numpy import mat
 from scipy.integrate import odeint
-from scipy.sparse import csr_matrix
+from scipy.sparse import lil_matrix
 
 
 def CDDMatrix(rows, ineq=True):
@@ -183,12 +187,59 @@ class PWASystem(object):
 
 class PWATS(object):
 
-    def __init__(self, pwa):
+    def __init__(self, pwa, init=None, ltl=None):
         self._pwa = pwa
+        self._init = init
+        self._ltl = ltl
         self.ts = self.build_ts(pwa)
 
     def build_ts(self, pwa):
         m = np.array([[1 if pwa.connected(l1, l2) else 0
                        for l2 in pwa.states()] for l1 in pwa.states()])
-        return csr_matrix(m)
+        return lil_matrix(m)
+
+    def states(self):
+        return self._pwa.states()
+
+    def isblocking(self, i):
+        return self.ts[i,].getnnz() == 0
+
+
+    def remove_blocking(self):
+        try:
+            r = next(i for i in range(len(self.states()))
+                     if self.isblocking(i))
+            self.ts[:,r] = 0
+            self.remove_blocking()
+        except StopIteration:
+            return
+
+    def toNUSMV(self):
+        out = StringIO()
+        print >>out, "MODULE main"
+        print >>out, "VAR"
+        print >>out, 'state : %s;' % nusmv_statelist(self.states())
+        print >>out, 'ASSIGN'
+        print >>out, 'init(state) := %s;' % nusmv_statelist(self._init)
+        print >>out, 'next(state) := '
+        print >>out, 'case'
+
+        for i in range(len(self.states())):
+            if not self.isblocking(i):
+                print >>out, 'state = %s : %s;' % ("s" + self.states()[i],
+                    nusmv_statelist([self.states()[j]
+                                     for j in self.ts[i,].nonzero()[1]]))
+
+        print >>out, 'TRUE : state;'
+        print >>out, 'esac;'
+        if self._ltl is not None:
+            print >>out, 'LTLSPEC %s' % self._ltl
+
+        s = out.getvalue()
+        out.close()
+        return s
+
+
+def nusmv_statelist(l):
+    return '{%s}' % ', '.join(map(lambda x: "s" + x, l))
 

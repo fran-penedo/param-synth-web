@@ -86,4 +86,20 @@ def pwats_test():
     assert_array_equal(ts.ts.toarray(), desired)
 
 
+def pwats_toNUSMV_test():
+    constr = [[0, 1], [-1, 1]]
+    psets = [CDDMatrix([[1, 1, 0.5]], False),
+             CDDMatrix([[1, 1, 1]], False),
+             CDDMatrix([[1, -1, 1.5]], False)]
+    poly = CDDMatrix([[1, -1], [1, 2]], False)
+    psets = map(CDDMatrixUnion, psets)
+    pwa = PWASystem(poly, constr, psets)
+    ts = PWATS(pwa, init=["00"], ltl='F state = s01')
+
+    print ts.toNUSMV()
+
+
+def nusmv_statelist_test():
+    assert_equal(nusmv_statelist(["01", "10"]), '{s01, s10}')
+    assert_equal(nusmv_statelist(["01"]), '{s01}')
 
