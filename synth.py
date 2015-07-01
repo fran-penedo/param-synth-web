@@ -5,7 +5,6 @@ try:
     from cStringIO import StringIO
 except:
     from StringIO import StringIO
-from numpy import mat
 from scipy.integrate import odeint
 from scipy.sparse import lil_matrix
 import re
@@ -239,20 +238,26 @@ class PWATS(object):
             return
 
         self._pwa.disconnect(self.states()[i], self.states()[j])
-        self.ts[i, j] = 0
+        return self.update_connected(i)
+
+    def update_connected(i):
+        remove = [j for j in range(len(self.states()))
+                  if self._pwa.connected(i, j)]
+        self.ts[i, remove] = 0
+        return zip([i for x in remove], remove)
 
     def isblocking(self, i):
         return self.ts[i, ].getnnz() == 0
 
-    # TODO change parameter sets
     def remove_blocking(self):
         try:
             r = next(i for i in range(len(self.states()))
                      if self.isblocking(i))
-            self.ts[:, r] = 0
-            self.remove_blocking()
+            removed = sum([self.remove_link(i, r)
+                           for i in self.ts[:,r].nonzero()[0]], [])
+            return removed + self.remove_blocking()
         except StopIteration:
-            return
+            return []
 
     def modelcheck(self):
         ps = Popen('lib/nusmv/NuSMV', stdin=PIPE, stdout=PIPE)
