@@ -110,3 +110,19 @@ def parse_nusmv_test():
     assert_false(check)
     assert_list_equal(trace,
                       [('00', '10'), ('10', '11'), ('11', '00'), ('00', '00')])
+
+def pwa_disconnect_test():
+    constr = [[0, 1], [-1, 1]]
+    psets = [CDDMatrix([[1, 1, 0.5]], False),
+             CDDMatrix([[1, 1, 1]], False),
+             CDDMatrix([[1, -1, 1.5]], False)]
+    poly = CDDMatrix([[1, -1], [1, 2]], False)
+    psets = map(CDDMatrixUnion, psets)
+    pwa = PWASystem(poly, constr, psets)
+
+    assert_true(pwa.connected('00', '10'))
+    pwa.disconnect('00', '10')
+    assert_false(pwa.connected('00', '10'))
+
+
+

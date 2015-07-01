@@ -1,5 +1,6 @@
 import cdd
 import numpy as np
+import scipy
 try:
     from cStringIO import StringIO
 except:
@@ -38,6 +39,26 @@ class CDDMatrixUnion(object):
 
     def components(self):
         return self._components
+
+    def copy(self):
+        return CDDMatrixUnion([x.copy() for x in self.components()])
+
+    def extend(self, x):
+        if isinstance(x, CDDMatrixUnion):
+            for y in x.components():
+                self._extend_single(y)
+
+        else:
+            self._extend_single(x)
+
+        self.prune()
+
+    def prune(self):
+        self._components = [m for m in self.components() if not pempty(m)]
+
+    def _extend_single(self, x):
+        for y in self.components():
+            y.extend(x)
 
 
 def smul(s, v):
@@ -174,15 +195,26 @@ class PWASystem(object):
         eq1 = self.eqs[l1]
         for pset in eq1['pset'].components():
             hull = CDDMatrix([[1] + list(affine_eval(p[1:], v[1:], self.n))
-                for p in vrep(pset)
-                for v in vrep(eq1['dom'])], False)
+                              for p in vrep(pset)
+                              for v in vrep(eq1['dom'])], False)
             if not pempty(pinters(hull, xl2)):
                 return True
 
         return False
 
     def disconnect(self, l1, l2):
-        pass
+        Xl1 = self.eqs[l1]['dom']
+        Xl2 = self.eqs[l2]['dom']
+        punderset = CDDMatrixUnion(
+            [CDDMatrix([[-h[0]] + list(- np.array(h[1:]).dot(reshape_x(x[1:])))
+                        for x in vrep(Xl1)])
+             for h in Xl2])
+        self.eqs[l1]['pset'] = pinters(self.eqs[l1]['pset'], punderset)
+
+
+def reshape_x(x):
+    return np.hstack((scipy.linalg.block_diag(*[x for i in range(len(x))]),
+                      np.identity(len(x))))
 
 
 class PWATS(object):
@@ -206,7 +238,7 @@ class PWATS(object):
         if self.ts[i, j] == 0:
             return
 
-        self._pwa.disconnect(i, j)
+        self._pwa.disconnect(self.states()[i], self.states()[j])
         self.ts[i, j] = 0
 
     def isblocking(self, i):
