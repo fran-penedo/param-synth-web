@@ -94,7 +94,7 @@ def pwats_toNUSMV_test():
     poly = CDDMatrix([[1, -1], [1, 2]], False)
     psets = map(CDDMatrixUnion, psets)
     pwa = PWASystem(poly, constr, psets)
-    ts = PWATS(pwa, init=["00"], ltl='F state = s01')
+    ts = PWATS(pwa, init=["00"], ltl='F state = s10')
 
     print ts.toNUSMV()
 
@@ -103,3 +103,10 @@ def nusmv_statelist_test():
     assert_equal(nusmv_statelist(["01", "10"]), '{s01, s10}')
     assert_equal(nusmv_statelist(["01"]), '{s01}')
 
+def parse_nusmv_test():
+    with open('tests/parse_nusmv_test.txt', 'r') as f:
+        check, trace = parse_nusmv(f.read())
+
+    assert_false(check)
+    assert_list_equal(trace,
+                      [('00', '10'), ('10', '11'), ('11', '00'), ('00', '00')])

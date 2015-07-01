@@ -7,7 +7,7 @@ except:
 from numpy import mat
 from scipy.integrate import odeint
 from scipy.sparse import lil_matrix
-
+import re
 
 def CDDMatrix(rows, ineq=True):
     m = cdd.Matrix(rows)
@@ -156,6 +156,7 @@ class PWASystem(object):
     def evalf(self, x, t=0):
         eq = next(e for e in self.eqs.values() if contains(e['domnp'], x))
         p = draw(eq['pset'])
+        # TODO extract this to a method and use in connected
         try:
             n = len(x)
         except TypeError:
@@ -193,6 +194,7 @@ class PWATS(object):
         self._ltl = ltl
         self.ts = self.build_ts(pwa)
 
+    # TODO take a look at multiprocessing. Should be easy to parallelize
     def build_ts(self, pwa):
         m = np.array([[1 if pwa.connected(l1, l2) else 0
                        for l2 in pwa.states()] for l1 in pwa.states()])
@@ -213,6 +215,11 @@ class PWATS(object):
             self.remove_blocking()
         except StopIteration:
             return
+
+    def modelcheck(self):
+        ps = Popen('lib/nusmv/NuSMV', stdin=PIPE, stdout=PIPE)
+        out = ps.comunicate(self.toNUSMV())
+        return parse_nusmv(out)
 
     def toNUSMV(self):
         out = StringIO()
@@ -243,3 +250,23 @@ class PWATS(object):
 def nusmv_statelist(l):
     return '{%s}' % ', '.join(map(lambda x: "s" + x, l))
 
+
+def parse_nusmv(out):
+    if out.find('true') != -1:
+        return True, []
+    else:
+        lines = out.splitlines()
+        start = next(i for i in range(len(lines))
+            if lines[i].startswith('Trace Type: Counterexample'))
+        loop = next(i for i in range(len(lines))
+            if lines[i].startswith('-- Loop starts here'))
+
+        p = re.compile('state = s([0,1]+)')
+        matches = (p.search(line) for line in lines[start:])
+        chain = [m.group(1) for m in matches if m is not None]
+        loopstate = p.search(lines[loop + 2]).group(1)
+
+        trace = [(x, y) for x, y in zip(chain, chain[1:])] + \
+            [(chain[-1], loopstate)]
+
+        return False, trace
