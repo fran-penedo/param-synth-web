@@ -7,8 +7,14 @@ except:
     from StringIO import StringIO
 from scipy.integrate import odeint
 from scipy.sparse import lil_matrix
+from subprocess import Popen, PIPE
+import copy
 import re
 
+
+class _CDDMatrix(cdd.Matrix):
+    def __deepcopy__(self, memo):
+        return self.copy()
 
 def CDDMatrix(rows, ineq=True):
     m = cdd.Matrix(rows)
@@ -20,6 +26,9 @@ def CDDMatrix(rows, ineq=True):
 
 
 def vrep(m):
+    #ret = _CDDMatrix(cdd.Polyhedron(m).get_generators())
+    #ret.rep_type = cdd.RepType.GENERATOR
+    #return ret
     return cdd.Polyhedron(m).get_generators()
 
 
@@ -69,10 +78,7 @@ def dot(a, b):
 
 
 def pequal(m1, m2):
-    p1 = cdd.Polyhedron(m1)
-    p2 = cdd.Polyhedron(m2)
-
-    return set(p1.get_generators()) == set(p2.get_generators())
+    return set(vrep(m1)) == set(vrep(m2))
 
 
 def pempty(m):
@@ -145,6 +151,7 @@ def chunks(l, n):
 
 
 def draw(pset):
+    # TODO
     return [4, 5]
 
 
@@ -218,11 +225,11 @@ def reshape_x(x):
 
 class PWATS(object):
 
-    def __init__(self, pwa, init=None, ltl=None):
+    def __init__(self, pwa, init=None, ltl=None, ts=None):
         self._pwa = pwa
         self._init = init
         self._ltl = ltl
-        self.ts = self.build_ts(pwa)
+        self.ts = self.build_ts(pwa) if ts is None else ts
 
     # TODO take a look at multiprocessing. Should be easy to parallelize
     def build_ts(self, pwa):
@@ -233,12 +240,16 @@ class PWATS(object):
     def states(self):
         return self._pwa.states()
 
+    def init(self):
+        return self._init
+
     def remove_link(self, i, j):
         if self.ts[i, j] == 0:
             return
 
         self._pwa.disconnect(self.states()[i], self.states()[j])
-        return self.update_connected(i)
+        rem = self.update_connected(i)
+        return rem + self.remove_blocking()
 
     def update_connected(i):
         remove = [j for j in range(len(self.states()))
@@ -261,8 +272,21 @@ class PWATS(object):
 
     def modelcheck(self):
         ps = Popen('lib/nusmv/NuSMV', stdin=PIPE, stdout=PIPE)
-        out = ps.comunicate(self.toNUSMV())
+        out = ps.communicate(self.toNUSMV())[0]
         return parse_nusmv(out)
+
+    def __eq__(self, other):
+        # TODO
+        # Should I compare the pwa? The paper implies it's not necessary, but
+        # I'm not sure
+        return (self.ts - other.ts).nnz == 0
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def copy(self):
+        return copy.deepcopy(self)
+
 
     def toNUSMV(self):
         out = StringIO()
@@ -315,3 +339,49 @@ def parse_nusmv(out):
 
         return False, trace
 
+
+class Tree(object):
+
+    def __init__(self, node, children=[]):
+        self._node = node
+        self._children = children
+
+    def add_child(self, tree):
+        self._children.append(tree)
+
+    def add_children(self, children):
+        self._children.extend(children)
+
+    def contains(self, item, f):
+        if f(self._node, item):
+            return True
+        else:
+            return any((child.contains(item, f) for child in self._children))
+
+
+def compare_nodes(a, b):
+    ts1 = a[1]
+    ts2 = b[2]
+
+    return ts1.equals(ts2)
+
+
+def synthesize(ts):
+    root = Tree(([], ts))
+    stack = [root]
+
+    while len(stack) > 0:
+        cur = stack.pop()
+        t = cur._node[1]
+        if not any((t.isblocking(q) for q in t.init())):
+            check, trace = t.modelcheck()
+            if not check:
+                tnexts = [t.copy() for l in trace]
+                removed = [tn.remove_link(i, j)
+                           for tn, (i, j) in zip(tnexts, trace)]
+                children = [Tree((rem, tn)) for rem, tn in tnexts, removed
+                            if not root.contains(tn, compare_nodes)]
+                cur.add_children(children)
+                stack.extend(children)
+
+    return root

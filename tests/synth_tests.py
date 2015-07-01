@@ -125,4 +125,15 @@ def pwa_disconnect_test():
     assert_false(pwa.connected('00', '10'))
 
 
+def synthesize_test():
+    constr = [[0, 1], [-1, 1]]
+    psets = [CDDMatrix([[1, 1, 0.5]], False),
+             CDDMatrix([[1, 1, 1]], False),
+             CDDMatrix([[1, -1, 1.5]], False)]
+    poly = CDDMatrix([[1, -1], [1, 2]], False)
+    psets = map(CDDMatrixUnion, psets)
+    pwa = PWASystem(poly, constr, psets)
+    ts = PWATS(pwa, init=["00"], ltl='G state = s00')
+
+    synthesize(ts)
 
