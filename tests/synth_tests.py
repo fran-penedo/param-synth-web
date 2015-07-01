@@ -9,7 +9,7 @@ def bin_test():
 
 
 def contains_test():
-    m = np.mat([[-1, 1, 0], [2, -1, 0],
+    m = np.array([[-1, 1, 0], [2, -1, 0],
               [-1, 0, 1], [2, 0, -1]])
     assert_true(contains(m, [1.5, 1.5]))
     assert_false(contains(m, [0, 0]))

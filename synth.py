@@ -129,21 +129,21 @@ def draw(pset):
 
 
 def amatrix(p, n):
-    return mat(list(chunks(p, n))[:-1])
+    return np.array(list(chunks(p, n))[:-1])
 
 
 def bmatrix(p, n):
-    return mat(p[-n:]).T
+    return np.array(p[-n:]).T
 
 
 def affine_eval(p, x, n):
     A = amatrix(p, n)
     b = bmatrix(p, n)
-    return (A.dot(x) + b).getA()[0]
+    return A.dot(x) + b
 
 
 def contains(m, p):
-    return all(eq[0] + eq[1:].dot(p) >= 0 for eq in m.getA())
+    return all(eq[0] + eq[1:].dot(p) >= 0 for eq in m)
 
 
 class PWASystem(object):
@@ -151,7 +151,7 @@ class PWASystem(object):
     def __init__(self, poly, sconstrs, psets):
         self.eqs = {index: {'dom': dom,
                             'pset': pset,
-                            'domnp': mat(dom)}
+                            'domnp': np.array(dom)}
                     for pset, index, dom
                     in zip(psets,
                            *zip(*sorted(partition(poly, sconstrs).items())))}
