@@ -9,6 +9,7 @@ from scipy.integrate import odeint
 from scipy.sparse import lil_matrix
 import re
 
+
 def CDDMatrix(rows, ineq=True):
     m = cdd.Matrix(rows)
     if not ineq:
@@ -135,6 +136,12 @@ def bmatrix(p, n):
     return mat(p[-n:]).T
 
 
+def affine_eval(p, x, n):
+    A = amatrix(p, n)
+    b = bmatrix(p, n)
+    return (A.dot(x) + b).getA()[0]
+
+
 def contains(m, p):
     return all(eq[0] + eq[1:].dot(p) >= 0 for eq in m.getA())
 
@@ -156,14 +163,7 @@ class PWASystem(object):
     def evalf(self, x, t=0):
         eq = next(e for e in self.eqs.values() if contains(e['domnp'], x))
         p = draw(eq['pset'])
-        # TODO extract this to a method and use in connected
-        try:
-            n = len(x)
-        except TypeError:
-            n = 1
-        A = amatrix(p, n)
-        b = bmatrix(p, n)
-        return (A.dot(x) + b).getA()[0]
+        return affine_eval(p, x, self.n)
 
     # There's actually no need for this
     def integrate(self, t, x0):
@@ -173,17 +173,16 @@ class PWASystem(object):
         xl2 = self.eqs[l2]['dom']
         eq1 = self.eqs[l1]
         for pset in eq1['pset'].components():
-            m = CDDMatrix([[1] + list(
-                amatrix(p[1:], self.n).dot(v[1:]).getA().flatten() +
-                bmatrix(p[1:], self.n))
-                for p in cdd.Polyhedron(pset).get_generators()
-                for v in cdd.Polyhedron(eq1['dom']).get_generators()])
-            m.rep_type = cdd.RepType.GENERATOR
-            hull = cdd.Polyhedron(m).get_inequalities()
+            hull = CDDMatrix([[1] + list(affine_eval(p[1:], v[1:], self.n))
+                for p in vrep(pset)
+                for v in vrep(eq1['dom'])], False)
             if not pempty(pinters(hull, xl2)):
                 return True
 
         return False
+
+    def disconnect(self, l1, l2):
+        pass
 
 
 class PWATS(object):
@@ -203,15 +202,22 @@ class PWATS(object):
     def states(self):
         return self._pwa.states()
 
+    def remove_link(self, i, j):
+        if self.ts[i, j] == 0:
+            return
+
+        self._pwa.disconnect(i, j)
+        self.ts[i, j] = 0
+
     def isblocking(self, i):
-        return self.ts[i,].getnnz() == 0
+        return self.ts[i, ].getnnz() == 0
 
-
+    # TODO change parameter sets
     def remove_blocking(self):
         try:
             r = next(i for i in range(len(self.states()))
                      if self.isblocking(i))
-            self.ts[:,r] = 0
+            self.ts[:, r] = 0
             self.remove_blocking()
         except StopIteration:
             return
@@ -233,9 +239,10 @@ class PWATS(object):
 
         for i in range(len(self.states())):
             if not self.isblocking(i):
-                print >>out, 'state = %s : %s;' % ("s" + self.states()[i],
-                    nusmv_statelist([self.states()[j]
-                                     for j in self.ts[i,].nonzero()[1]]))
+                print >>out, 'state = %s : %s;' % \
+                    ("s" + self.states()[i],
+                     nusmv_statelist([self.states()[j]
+                                      for j in self.ts[i, ].nonzero()[1]]))
 
         print >>out, 'TRUE : state;'
         print >>out, 'esac;'
@@ -257,9 +264,9 @@ def parse_nusmv(out):
     else:
         lines = out.splitlines()
         start = next(i for i in range(len(lines))
-            if lines[i].startswith('Trace Type: Counterexample'))
+                     if lines[i].startswith('Trace Type: Counterexample'))
         loop = next(i for i in range(len(lines))
-            if lines[i].startswith('-- Loop starts here'))
+                    if lines[i].startswith('-- Loop starts here'))
 
         p = re.compile('state = s([0,1]+)')
         matches = (p.search(line) for line in lines[start:])
@@ -270,3 +277,4 @@ def parse_nusmv(out):
             [(chain[-1], loopstate)]
 
         return False, trace
+
