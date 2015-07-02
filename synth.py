@@ -12,7 +12,51 @@ import copy
 import re
 
 
-class _CDDMatrix(cdd.Matrix):
+class _CDDMatrix(object):
+    def __init__(self, m):
+        self._m = m
+
+    def __len__(self):
+        return len(self._m)
+
+    def __getitem__(self, key):
+        return self._m.__getitem__(key)
+
+    def __setitem__(self, key, value):
+        return self._m.__setitem__(key, value)
+
+    def __delitem__(self, key):
+        return self._m.__delitem__(key)
+
+    def canonicalize(self):
+        return self._m.canonicalize()
+
+    @property
+    def col_size(self):
+        return self._m.col_size
+
+    @property
+    def obj_type(self):
+        return self._m.obj_type
+
+    @obj_type.setter
+    def obj_type(self, value):
+        self._m.obj_type = value
+
+    @property
+    def rep_type(self):
+        return self._m.rep_type
+
+    @rep_type.setter
+    def rep_type(self, value):
+        self._m.rep_type = value
+
+    def extend(self, rows):
+        self._m.extend(rows)
+
+    def copy(self):
+        return _CDDMatrix(self._m.copy())
+
     def __deepcopy__(self, memo):
         return self.copy()
 
@@ -22,14 +66,11 @@ def CDDMatrix(rows, ineq=True):
         m.rep_type = cdd.RepType.GENERATOR
         m = cdd.Polyhedron(m).get_inequalities()
     m.rep_type = cdd.RepType.INEQUALITY
-    return m
+    return _CDDMatrix(m)
 
 
 def vrep(m):
-    #ret = _CDDMatrix(cdd.Polyhedron(m).get_generators())
-    #ret.rep_type = cdd.RepType.GENERATOR
-    #return ret
-    return cdd.Polyhedron(m).get_generators()
+    return _CDDMatrix(cdd.Polyhedron(m._m).get_generators())
 
 
 def extend(a, b):
@@ -87,7 +128,7 @@ def pempty(m):
 
     m.obj_type = cdd.LPObjType.MAX
     m.obj_func = [0 for i in range(m.col_size)]
-    lp = cdd.LinProg(m)
+    lp = cdd.LinProg(m._m)
     lp.solve()
     return lp.status == cdd.LPStatusType.INCONSISTENT
 
@@ -184,6 +225,7 @@ class PWASystem(object):
                            *zip(*sorted(partition(poly, sconstrs).items())))}
         self.n = len(sconstrs[0]) - 1
 
+    @property
     def states(self):
         return sorted(self.eqs.keys())
 
@@ -225,45 +267,48 @@ def reshape_x(x):
 
 class PWATS(object):
 
-    def __init__(self, pwa, init=None, ltl=None, ts=None):
+    def __init__(self, pwa, init=[], ltl=None):
         self._pwa = pwa
-        self._init = init
         self._ltl = ltl
-        self.ts = self.build_ts(pwa) if ts is None else ts
+        self.ts = self.build_ts(pwa)
+        self._init = [self.states.index(i) for i in init]
 
     # TODO take a look at multiprocessing. Should be easy to parallelize
     def build_ts(self, pwa):
         m = np.array([[1 if pwa.connected(l1, l2) else 0
-                       for l2 in pwa.states()] for l1 in pwa.states()])
+                       for l2 in pwa.states] for l1 in pwa.states])
         return lil_matrix(m)
 
+    @property
     def states(self):
-        return self._pwa.states()
+        return self._pwa.states
 
+    @property
     def init(self):
         return self._init
 
     def remove_link(self, i, j):
         if self.ts[i, j] == 0:
-            return
+            return []
 
-        self._pwa.disconnect(self.states()[i], self.states()[j])
+        self._pwa.disconnect(self.states[i], self.states[j])
         rem = self.update_connected(i)
         return rem + self.remove_blocking()
 
-    def update_connected(i):
-        remove = [j for j in range(len(self.states()))
-                  if self._pwa.connected(i, j)]
+    def update_connected(self, i):
+        remove = [j for j in self.ts[i,:].nonzero()[1]
+                  if not self._pwa.connected(self.states[i], self.states[j])]
         self.ts[i, remove] = 0
         return zip([i for x in remove], remove)
 
     def isblocking(self, i):
-        return self.ts[i, ].getnnz() == 0
+        return self.ts[i, ].getnnz() == 0 and (self.ts[:,i].getnnz() > 0 or
+                                               i in self.init)
 
     def remove_blocking(self):
         try:
-            r = next(i for i in range(len(self.states()))
-                     if self.isblocking(i))
+            r = next(i for i in range(len(self.states))
+                     if self.isblocking(i) and i not in self.init)
             removed = sum([self.remove_link(i, r)
                            for i in self.ts[:,r].nonzero()[0]], [])
             return removed + self.remove_blocking()
@@ -273,7 +318,11 @@ class PWATS(object):
     def modelcheck(self):
         ps = Popen('lib/nusmv/NuSMV', stdin=PIPE, stdout=PIPE)
         out = ps.communicate(self.toNUSMV())[0]
-        return parse_nusmv(out)
+        try:
+            return parse_nusmv(out)
+        except:
+            print self.toNUSMV()
+            raise Exception()
 
     def __eq__(self, other):
         # TODO
@@ -292,17 +341,18 @@ class PWATS(object):
         out = StringIO()
         print >>out, "MODULE main"
         print >>out, "VAR"
-        print >>out, 'state : %s;' % nusmv_statelist(self.states())
+        print >>out, 'state : %s;' % nusmv_statelist(self.states)
         print >>out, 'ASSIGN'
-        print >>out, 'init(state) := %s;' % nusmv_statelist(self._init)
+        print >>out, 'init(state) := %s;' % \
+            nusmv_statelist([self.states[i] for i in self._init])
         print >>out, 'next(state) := '
         print >>out, 'case'
 
-        for i in range(len(self.states())):
+        for i in range(len(self.states)):
             if not self.isblocking(i):
                 print >>out, 'state = %s : %s;' % \
-                    ("s" + self.states()[i],
-                     nusmv_statelist([self.states()[j]
+                    ("s" + self.states[i],
+                     nusmv_statelist([self.states[j]
                                       for j in self.ts[i, ].nonzero()[1]]))
 
         print >>out, 'TRUE : state;'
@@ -322,6 +372,9 @@ def nusmv_statelist(l):
 def parse_nusmv(out):
     if out.find('true') != -1:
         return True, []
+    elif out.find('Parser error') != -1:
+        print out
+        raise Exception()
     else:
         lines = out.splitlines()
         start = next(i for i in range(len(lines))
@@ -342,9 +395,12 @@ def parse_nusmv(out):
 
 class Tree(object):
 
-    def __init__(self, node, children=[]):
+    def __init__(self, node, children=None):
         self._node = node
-        self._children = children
+        if children is None:
+            self._children = []
+        else:
+            self._children = children
 
     def add_child(self, tree):
         self._children.append(tree)
@@ -358,12 +414,14 @@ class Tree(object):
         else:
             return any((child.contains(item, f) for child in self._children))
 
+    def __str__(self):
+        return '{%s, [%s]}' % (self._node.__str__(),
+                               ', '.join([child.__str__()
+                                          for child in self._children]))
+
 
 def compare_nodes(a, b):
-    ts1 = a[1]
-    ts2 = b[2]
-
-    return ts1.equals(ts2)
+    return a[1] == b
 
 
 def synthesize(ts):
@@ -373,13 +431,14 @@ def synthesize(ts):
     while len(stack) > 0:
         cur = stack.pop()
         t = cur._node[1]
-        if not any((t.isblocking(q) for q in t.init())):
+        if not any((t.isblocking(q) for q in t.init)):
             check, trace = t.modelcheck()
+            itrace = [(t.states.index(i), t.states.index(j)) for i, j in trace]
             if not check:
                 tnexts = [t.copy() for l in trace]
                 removed = [tn.remove_link(i, j)
-                           for tn, (i, j) in zip(tnexts, trace)]
-                children = [Tree((rem, tn)) for rem, tn in tnexts, removed
+                           for tn, (i, j) in zip(tnexts, itrace)]
+                children = [Tree((rem, tn)) for tn, rem in zip(tnexts, removed)
                             if not root.contains(tn, compare_nodes)]
                 cur.add_children(children)
                 stack.extend(children)

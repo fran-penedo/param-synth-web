@@ -96,7 +96,7 @@ def pwats_toNUSMV_test():
     pwa = PWASystem(poly, constr, psets)
     ts = PWATS(pwa, init=["00"], ltl='F state = s10')
 
-    print ts.toNUSMV()
+    #print ts.toNUSMV()
 
 
 def nusmv_statelist_test():
@@ -135,5 +135,6 @@ def synthesize_test():
     pwa = PWASystem(poly, constr, psets)
     ts = PWATS(pwa, init=["00"], ltl='G state = s00')
 
-    synthesize(ts)
+    tree = synthesize(ts)
+    print tree
 
