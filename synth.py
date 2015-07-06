@@ -63,6 +63,7 @@ class _CDDMatrix(object):
     def __deepcopy__(self, memo):
         return self.copy()
 
+
 def CDDMatrix(rows, ineq=True):
     m = cdd.Matrix(rows)
     if not ineq:
@@ -196,9 +197,13 @@ def simp_vol(s):
 
 
 def volume(m):
-    pts = vrep_pts(m)
-    dt = Delaunay(pts)
-    return sum(simp_vol(s) for s in dt.points[dt.simplices])
+    if isinstance(m, CDDMatrixUnion):
+        # FIXME THIS IS WRONG!!
+        return sum(volume(x) for x in m.components())
+    else:
+        pts = vrep_pts(m)
+        dt = Delaunay(pts)
+        return sum(simp_vol(s) for s in dt.points[dt.simplices])
 
 
 #######
@@ -272,12 +277,12 @@ class PWASystem(object):
         Xl2 = self.eqs[l2]['dom']
         if l1 == l2:
             trans = [CDDMatrix([[np.array(h).dot(v)] +
-                                (- np.array(h).dot(reshape_x(v)))
+                                list(- np.array(h).dot(reshape_x(v)))
                                 for v in vrep_pts(Xl1)])
-                     for h in sample_h()]
+                     for h in sample_h(Xl1.col_size - 1)]
             ps = [pinters(self.eqs[l1]['pset'], t) for t in trans]
             self.eqs[l1]['pset'] = max([(p, volume(p)) for p in ps],
-                                       lambda pair: pair[1])[0]
+                                       key=lambda pair: pair[1])[0]
         else:
             punderset = CDDMatrixUnion(
                 [CDDMatrix([[-h[0]] + list(- np.array(h[1:]).dot(reshape_x(x[1:])))
