@@ -49,6 +49,11 @@ def refine_test():
     assert_set_equal(x, y)
 
 
+def volume_test():
+    pts = [[1,a,b,c,d]
+           for a in [0,1] for b in [0,1] for c in [0,1] for d in [0,1]]
+    assert_almost_equal(volume(CDDMatrix(pts, False)), 1)
+
 def pwa_test():
     constr = [[1, -1, 0], [2, -1, 0],
               [1, 0, -1], [2, 0, -1]]

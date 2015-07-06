@@ -7,6 +7,9 @@ except:
     from StringIO import StringIO
 from scipy.integrate import odeint
 from scipy.sparse import lil_matrix
+from scipy.linalg import det
+from scipy.spatial import Delaunay
+from math import factorial
 from subprocess import Popen, PIPE
 import copy
 import re
@@ -51,8 +54,8 @@ class _CDDMatrix(object):
     def rep_type(self, value):
         self._m.rep_type = value
 
-    def extend(self, rows):
-        self._m.extend(rows)
+    def extend(self, rows, linear=False):
+        self._m.extend(rows, linear)
 
     def copy(self):
         return _CDDMatrix(self._m.copy())
@@ -73,9 +76,13 @@ def vrep(m):
     return _CDDMatrix(cdd.Polyhedron(m._m).get_generators())
 
 
-def extend(a, b):
+def vrep_pts(m):
+    return [v[1:] for v in vrep(m)]
+
+
+def extend(a, b, linear=False):
     x = a.copy()
-    x.extend(b)
+    x.extend(b, linear)
     return x
 
 
@@ -92,22 +99,22 @@ class CDDMatrixUnion(object):
     def copy(self):
         return CDDMatrixUnion([x.copy() for x in self.components()])
 
-    def extend(self, x):
+    def extend(self, x, linear=False):
         if isinstance(x, CDDMatrixUnion):
             for y in x.components():
-                self._extend_single(y)
+                self._extend_single(y, linear)
 
         else:
-            self._extend_single(x)
+            self._extend_single(x, linear)
 
         self.prune()
 
     def prune(self):
         self._components = [m for m in self.components() if not pempty(m)]
 
-    def _extend_single(self, x):
+    def _extend_single(self, x, linear):
         for y in self.components():
-            y.extend(x)
+            y.extend(x, linear)
 
 
 def smul(s, v):
@@ -184,6 +191,16 @@ def refine(poly, part, constrs):
             for c, a, i1, i2 in prod if not pempty(c)}
 
 
+def simp_vol(s):
+    return abs(det(np.array([v - s[0] for v in s[1:]])) / factorial(len(s) - 1))
+
+
+def volume(m):
+    pts = vrep_pts(m)
+    dt = Delaunay(pts)
+    return sum(simp_vol(s) for s in dt.points[dt.simplices])
+
+
 #######
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
@@ -253,16 +270,29 @@ class PWASystem(object):
     def disconnect(self, l1, l2):
         Xl1 = self.eqs[l1]['dom']
         Xl2 = self.eqs[l2]['dom']
-        punderset = CDDMatrixUnion(
-            [CDDMatrix([[-h[0]] + list(- np.array(h[1:]).dot(reshape_x(x[1:])))
-                        for x in vrep(Xl1)])
-             for h in Xl2])
-        self.eqs[l1]['pset'] = pinters(self.eqs[l1]['pset'], punderset)
+        if l1 == l2:
+            trans = [CDDMatrix([[np.array(h).dot(v)] +
+                                (- np.array(h).dot(reshape_x(v)))
+                                for v in vrep_pts(Xl1)])
+                     for h in sample_h()]
+            ps = [pinters(self.eqs[l1]['pset'], t) for t in trans]
+            self.eqs[l1]['pset'] = max([(p, volume(p)) for p in ps],
+                                       lambda pair: pair[1])[0]
+        else:
+            punderset = CDDMatrixUnion(
+                [CDDMatrix([[-h[0]] + list(- np.array(h[1:]).dot(reshape_x(x[1:])))
+                            for x in vrep(Xl1)])
+                for h in Xl2])
+            self.eqs[l1]['pset'] = pinters(self.eqs[l1]['pset'], punderset)
 
 
 def reshape_x(x):
     return np.hstack((scipy.linalg.block_diag(*[x for i in range(len(x))]),
                       np.identity(len(x))))
+
+def sample_h(n):
+    return np.identity(n)
+
 
 
 class PWATS(object):
