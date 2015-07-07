@@ -8,7 +8,8 @@ except:
 from scipy.integrate import odeint
 from scipy.sparse import lil_matrix
 from scipy.linalg import det
-from scipy.spatial import Delaunay
+#from scipy.spatial import Delaunay
+import operator
 from math import factorial
 from subprocess import Popen, PIPE
 import copy
@@ -201,9 +202,13 @@ def volume(m):
         # FIXME THIS IS WRONG!!
         return sum(volume(x) for x in m.components())
     else:
+        #pts = vrep_pts(m)
+        #dt = Delaunay(pts)
+        #return sum(simp_vol(s) for s in dt.points[dt.simplices])
         pts = vrep_pts(m)
-        dt = Delaunay(pts)
-        return sum(simp_vol(s) for s in dt.points[dt.simplices])
+        return reduce(operator.mul, [x for x in
+                                     np.amax(pts, 0) - np.amin(pts, 0)
+                                     if x > 0])
 
 
 #######
@@ -328,6 +333,7 @@ class PWATS(object):
 
         self._pwa.disconnect(self.states[i], self.states[j])
         rem = self.update_connected(i)
+        self.ts[i, j] = 0
         return rem + self.remove_blocking()
 
     def update_connected(self, i):
@@ -420,10 +426,10 @@ def parse_nusmv(out):
         p = re.compile('state = s([0,1]+)')
         matches = (p.search(line) for line in lines[start:])
         chain = [m.group(1) for m in matches if m is not None]
-        loopstate = p.search(lines[loop + 2]).group(1)
+        if loop == len(lines) - 4:
+            chain.append(chain[-1])
 
-        trace = [(x, y) for x, y in zip(chain, chain[1:])] + \
-            [(chain[-1], loopstate)]
+        trace = [(x, y) for x, y in zip(chain, chain[1:])]
 
         return False, trace
 
@@ -450,9 +456,16 @@ class Tree(object):
             return any((child.contains(item, f) for child in self._children))
 
     def __str__(self):
-        return '{%s, [%s]}' % (self._node.__str__(),
-                               ', '.join([child.__str__()
-                                          for child in self._children]))
+        return self.pprint(0)
+
+    def pprint(self, indent):
+        return ''.join([(' ' * indent + '{}').format(l) for l in
+                        ['{%s,\n' % self._node[0].__str__(),
+                        '%s,\n' % self._node[1].__str__(),
+                        '[\n%s\n' % ',\n'.join([x.pprint(indent + 2)
+                                                    for x in self._children]),
+                        ']}']
+                        ])
 
 
 def compare_nodes(a, b):
@@ -468,10 +481,11 @@ def synthesize(ts):
         t = cur._node[1]
         if not any((t.isblocking(q) for q in t.init)):
             check, trace = t.modelcheck()
+            print trace
             itrace = [(t.states.index(i), t.states.index(j)) for i, j in trace]
             if not check:
                 tnexts = [t.copy() for l in trace]
-                removed = [tn.remove_link(i, j)
+                removed = [[(tn.states[a], tn.states[b]) for a, b in tn.remove_link(i, j)]
                            for tn, (i, j) in zip(tnexts, itrace)]
                 children = [Tree((rem, tn)) for tn, rem in zip(tnexts, removed)
                             if not root.contains(tn, compare_nodes)]

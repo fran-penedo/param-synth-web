@@ -114,7 +114,7 @@ def parse_nusmv_test():
 
     assert_false(check)
     assert_list_equal(trace,
-                      [('00', '10'), ('10', '11'), ('11', '00'), ('00', '00')])
+                      [('00', '10'), ('10', '11'), ('11', '00')])
 
 def pwa_disconnect_test():
     constr = [[0, 1], [-1, 1]]
