@@ -126,21 +126,14 @@ class CDDMatrixUnion(object):
         return CDDMatrixUnion([x.copy() for x in self.components()])
 
     def extend(self, x):
-        if isinstance(x, CDDMatrixUnion):
-            for y in x.components():
-                self._extend_single(y)
-
-        else:
-            self._extend_single(x)
+        for y in self.components():
+            y.extend(x)
 
         self.prune()
 
     def prune(self):
         self._components = [m for m in self.components() if not pempty(m)]
 
-    def _extend_single(self, x):
-        for y in self.components():
-            y.extend(x)
 
 
 def smul(s, v):
@@ -167,7 +160,14 @@ def pempty(m):
 
 
 def pinters(a, b):
-    return extend(a, b)
+    if isinstance(b, CDDMatrixUnion):
+        if isinstance(a, CDDMatrixUnion):
+            return CDDMatrixUnion([comp for m in b.components()
+                                   for comp in extend(a, m).components()])
+        else:
+            return extend(b, a)
+    else:
+        return extend(a, b)
 
 
 def bin(s):
@@ -363,6 +363,8 @@ class PWATS(object):
         self._pwa.disconnect(self.states[i], self.states[j])
         rem = self.update_connected(i)
         self.ts[i, j] = 0
+        if (i,j) not in rem:
+            rem.append((i,j))
         return rem + self.remove_blocking()
 
     def update_connected(self, i):
@@ -372,8 +374,10 @@ class PWATS(object):
         return zip([i for x in remove], remove)
 
     def isblocking(self, i):
-        return self.ts[i, ].getnnz() == 0 and (self.ts[:,i].getnnz() > 0 or
+        return self.issink(i) and (self.ts[:,i].getnnz() > 0 or
                                                i in self.init)
+    def issink(self, i):
+        return self.ts[i, ].getnnz() == 0
 
     def remove_blocking(self):
         try:
@@ -419,7 +423,7 @@ class PWATS(object):
         print >>out, 'case'
 
         for i in range(len(self.states)):
-            if not self.isblocking(i):
+            if not self.issink(i):
                 print >>out, 'state = %s : %s;' % \
                     ("s" + self.states[i],
                      nusmv_statelist([self.states[j]
@@ -501,22 +505,26 @@ def compare_nodes(a, b):
     return a[1] == b
 
 
+PATH = '\033[91m'
+ENDC = '\033[0m'
+
 def synthesize(ts):
     root = Tree(([], ts))
     stack = [root]
 
     while len(stack) > 0:
-        cur = stack.pop()
-        t = cur._node[1]
+        cur = stack.pop(0)
+        path, t = cur._node
         if not any((t.isblocking(q) for q in t.init)):
             check, trace = t.modelcheck()
+            print PATH + path.__str__() + ENDC
             print trace
             itrace = [(t.states.index(i), t.states.index(j)) for i, j in trace]
             if not check:
                 tnexts = [t.copy() for l in trace]
                 removed = [[(tn.states[a], tn.states[b]) for a, b in tn.remove_link(i, j)]
                            for tn, (i, j) in zip(tnexts, itrace)]
-                children = [Tree((rem, tn)) for tn, rem in zip(tnexts, removed)
+                children = [Tree((path + rem, tn)) for tn, rem in zip(tnexts, removed)
                             if not root.contains(tn, compare_nodes)]
                 cur.add_children(children)
                 stack.extend(children)
