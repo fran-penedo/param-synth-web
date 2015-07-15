@@ -40,6 +40,10 @@ class _CDDMatrix(object):
         return self._m.col_size
 
     @property
+    def row_size(self):
+        return self._m.row_size
+
+    @property
     def obj_type(self):
         return self._m.obj_type
 
@@ -51,18 +55,38 @@ class _CDDMatrix(object):
     def rep_type(self):
         return self._m.rep_type
 
+    @property
+    def lin_set(self):
+        return self._m.lin_set
+
     @rep_type.setter
     def rep_type(self, value):
         self._m.rep_type = value
 
-    def extend(self, rows, linear=False):
-        self._m.extend(rows, linear)
+    def extend(self, b):
+        lin = []
+        notlin = []
+        for i in range(b.row_size):
+            if i in b.lin_set:
+                lin.append(b[i])
+            else:
+                notlin.append(b[i])
+
+        self._extend(lin, True)
+        self._extend(notlin, False)
+
+    def _extend(self, rows, linear):
+        if len(rows) > 0:
+            self._m.extend(rows, linear)
 
     def copy(self):
         return _CDDMatrix(self._m.copy())
 
     def __deepcopy__(self, memo):
         return self.copy()
+
+    def __str__(self):
+        return self._m.__str__()
 
 
 def CDDMatrix(rows, ineq=True):
@@ -82,9 +106,9 @@ def vrep_pts(m):
     return [v[1:] for v in vrep(m)]
 
 
-def extend(a, b, linear=False):
+def extend(a, b):
     x = a.copy()
-    x.extend(b, linear)
+    x.extend(b)
     return x
 
 
@@ -101,22 +125,22 @@ class CDDMatrixUnion(object):
     def copy(self):
         return CDDMatrixUnion([x.copy() for x in self.components()])
 
-    def extend(self, x, linear=False):
+    def extend(self, x):
         if isinstance(x, CDDMatrixUnion):
             for y in x.components():
-                self._extend_single(y, linear)
+                self._extend_single(y)
 
         else:
-            self._extend_single(x, linear)
+            self._extend_single(x)
 
         self.prune()
 
     def prune(self):
         self._components = [m for m in self.components() if not pempty(m)]
 
-    def _extend_single(self, x, linear):
+    def _extend_single(self, x):
         for y in self.components():
-            y.extend(x, linear)
+            y.extend(x)
 
 
 def smul(s, v):
@@ -289,11 +313,16 @@ class PWASystem(object):
             self.eqs[l1]['pset'] = max([(p, volume(p)) for p in ps],
                                        key=lambda pair: pair[1])[0]
         else:
-            punderset = CDDMatrixUnion(
-                [CDDMatrix([[-h[0]] + list(- np.array(h[1:]).dot(reshape_x(x[1:])))
-                            for x in vrep(Xl1)])
-                for h in Xl2])
-            self.eqs[l1]['pset'] = pinters(self.eqs[l1]['pset'], punderset)
+            self.eqs[l1]['pset'] = pinters(self.eqs[l1]['pset'],
+                                           punderset(Xl1, Xl2))
+
+
+def punderset(Xl1, Xl2):
+    return CDDMatrixUnion(
+        [CDDMatrix([[-h[0]] + list(- np.array(h[1:]).dot(reshape_x(x[1:])))
+                    for x in vrep(Xl1)])
+        for h in Xl2])
+
 
 
 def reshape_x(x):
