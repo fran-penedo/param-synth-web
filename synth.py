@@ -232,7 +232,7 @@ def volume(m):
         pts = vrep_pts(m)
         return reduce(operator.mul, [x for x in
                                      np.amax(pts, 0) - np.amin(pts, 0)
-                                     if x > 0])
+                                     if x > 0.01])
 
 
 #######
@@ -591,6 +591,7 @@ def _synthesize(t, path, depth, root):
         check, trace = t.modelcheck()
         itrace = [(t.states.index(i), t.states.index(j)) for i, j in trace]
         if check:
+            print PATH + "FOOOOOOOOOO" + ENDC
             return [], True
         else:
             tnexts = [t.copy() for l in trace]
