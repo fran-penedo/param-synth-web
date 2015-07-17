@@ -330,7 +330,7 @@ def reshape_x(x):
                       np.identity(len(x))))
 
 def sample_h(n):
-    return np.identity(n)
+    return np.vstack([np.identity(n), -np.identity(n)])
 
 
 
@@ -365,7 +365,10 @@ class PWATS(object):
         self.ts[i, j] = 0
         if (i,j) not in rem:
             rem.append((i,j))
-        return rem + self.remove_blocking()
+        remall = rem + self.remove_blocking()
+        if i == j and len(remall) > 1:
+            print rem, remall
+        return remall
 
     def update_connected(self, i):
         remove = [j for j in self.ts[i,:].nonzero()[1]
@@ -397,6 +400,13 @@ class PWATS(object):
         except:
             print self.toNUSMV()
             raise Exception()
+
+    def isfeasible(self):
+        ltl = self._ltl
+        self._ltl = '! (' + ltl + ')'
+        check, trace = self.modelcheck()
+        self._ltl = ltl
+        return not check
 
     def __eq__(self, other):
         # TODO
@@ -476,6 +486,16 @@ class Tree(object):
         else:
             self._children = children
 
+    def __getitem__(self, i):
+        return self._children[i]
+
+    def isleave(self):
+        return len(self._children) == 0
+
+    @property
+    def node(self):
+        return self._node
+
     def add_child(self, tree):
         self._children.append(tree)
 
@@ -493,40 +513,99 @@ class Tree(object):
 
     def pprint(self, indent):
         return ''.join([(' ' * indent + '{}').format(l) for l in
-                        ['{%s,\n' % self._node[0].__str__(),
-                        '%s,\n' % self._node[1].__str__(),
+                        ['{%s,\n' % self.node.path.__str__(),
+                        '%s,\n' % self.node.path.__str__(),
                         '[\n%s\n' % ',\n'.join([x.pprint(indent + 2)
                                                     for x in self._children]),
                         ']}']
                         ])
 
 
+class Node(object):
+    def __init__(self, path, ts, feas, trace):
+        self._path = path
+        self._ts = ts
+        self._feas = feas
+        self._trace = trace
+
+    @property
+    def path(self):
+        return self._path
+
+    @path.setter
+    def path(self, value):
+        self._path = value
+
+    @property
+    def ts(self):
+        return self._ts
+
+    @ts.setter
+    def ts(self, value):
+        self._ts = value
+
+    @property
+    def feas(self):
+        return self._feas
+
+    @feas.setter
+    def feas(self, value):
+        self._feas = value
+
+    @property
+    def trace(self):
+        return self._trace
+
+    @trace.setter
+    def trace(self, value):
+        self._trace = value
+
+
 def compare_nodes(a, b):
-    return a[1] == b
+    return a.ts == b
+
+
+def leaves(tree):
+    if tree.isleave():
+        yield tree
+    else:
+        for c in tree._children:
+            for l in leaves(c):
+                yield l
 
 
 PATH = '\033[91m'
 ENDC = '\033[0m'
 
-def synthesize(ts):
-    root = Tree(([], ts))
-    stack = [root]
-
-    while len(stack) > 0:
-        cur = stack.pop(0)
-        path, t = cur._node
-        if not any((t.isblocking(q) for q in t.init)):
-            check, trace = t.modelcheck()
-            print PATH + path.__str__() + ENDC
-            print trace
-            itrace = [(t.states.index(i), t.states.index(j)) for i, j in trace]
-            if not check:
-                tnexts = [t.copy() for l in trace]
-                removed = [[(tn.states[a], tn.states[b]) for a, b in tn.remove_link(i, j)]
-                           for tn, (i, j) in zip(tnexts, itrace)]
-                children = [Tree((path + rem, tn)) for tn, rem in zip(tnexts, removed)
-                            if not root.contains(tn, compare_nodes)]
-                cur.add_children(children)
-                stack.extend(children)
-
+def synthesize(ts, depth=-1):
+    root = Tree(Node([], ts, None, None))
+    children, feas = _synthesize(ts, [], depth, root)
+    root.node.feas = feas
+    root.add_children(children)
     return root
+
+def _synthesize(t, path, depth, root):
+    if any((t.isblocking(q) for q in t.init)) or not t.isfeasible():
+        return [], False
+    elif depth != 0:
+        check, trace = t.modelcheck()
+        itrace = [(t.states.index(i), t.states.index(j)) for i, j in trace]
+        if check:
+            return [], True
+        else:
+            tnexts = [t.copy() for l in trace]
+            removed = [[(tn.states[a], tn.states[b]) for a, b in tn.remove_link(i, j)]
+                        for tn, (i, j) in zip(tnexts, itrace)]
+            children = [Tree(Node(path + rem, tn, None, l))
+                        for tn, rem, l in zip(tnexts, removed, itrace)
+                        if not root.contains(tn, compare_nodes)]
+
+            for child in children:
+                cs, feas = _synthesize(child.node.ts, child.node.path,
+                                depth - 1, root)
+                child.node.feas = feas
+                child.add_children(cs)
+
+            return children, True
+    else:
+        return [], True
