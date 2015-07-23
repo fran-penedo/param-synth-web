@@ -62,7 +62,7 @@ def pwa_test():
     psets[4] = 'P'
     pwa = PWASystem(poly, constr, psets)
     eq = pwa.eqs['0101']
-    assert_equal(eq['pset'], 'P')
+    assert_equal(eq.pset, 'P')
 
 
 def integrate_test():
@@ -81,13 +81,13 @@ def pwats_test():
     constr = [[0, 1], [-1, 1]]
     psets = [CDDMatrix([[1, 1, 0.5]], False),
              CDDMatrix([[1, 1, 1]], False),
-             CDDMatrix([[1, -1, 1.5]], False)]
+             CDDMatrix([[1, -2, 2.5]], False)]
     poly = CDDMatrix([[1, -1], [1, 2]], False)
     psets = map(CDDMatrixUnion, psets)
     pwa = PWASystem(poly, constr, psets)
     ts = PWATS(pwa)
 
-    desired = np.array([[1, 1, 0], [0, 0, 1], [1, 1, 0]])
+    desired = np.array([[1, 1, 0, 0], [0, 0, 1, 0], [1, 1, 0, 1], [0, 0, 0, 0]])
     assert_array_equal(ts.ts.toarray(), desired)
 
 

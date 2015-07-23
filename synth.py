@@ -262,18 +262,54 @@ def affine_eval(p, x, n):
 
 
 def contains(m, p):
-    return all(eq[0] + eq[1:].dot(p) >= 0 for eq in m)
+    if m is not None:
+        return all(eq[0] + eq[1:].dot(p) >= 0 for eq in m)
+    else:
+        return False
+
+
+class Equation(object):
+
+    def __init__(self, dom, pset, domnp):
+        self._dom = dom
+        self._pset = pset
+        self._domnp = domnp
+
+    @property
+    def dom(self):
+        return self._dom
+
+    @dom.setter
+    def dom(self, value):
+        self._dom = value
+
+    @property
+    def pset(self):
+        return self._pset
+
+    @pset.setter
+    def pset(self, value):
+        self._pset = value
+
+    @property
+    def domnp(self):
+        return self._domnp
+
+    @domnp.setter
+    def domnp(self, value):
+        self._domnp = value
 
 
 class PWASystem(object):
+    OUT = 'out'
 
     def __init__(self, poly, sconstrs, psets):
-        self.eqs = {index: {'dom': dom,
-                            'pset': pset,
-                            'domnp': np.array(dom)}
+        self.eqs = {index: Equation(dom, pset, np.array(dom))
                     for pset, index, dom
                     in zip(psets,
                            *zip(*sorted(partition(poly, sconstrs).items())))}
+        self.eqs[PWASystem.OUT] = Equation(
+            CDDMatrix([smul(-1, h) for h in poly]), None, None)
         self.n = len(sconstrs[0]) - 1
 
     @property
@@ -281,8 +317,8 @@ class PWASystem(object):
         return sorted(self.eqs.keys())
 
     def evalf(self, x, t=0):
-        eq = next(e for e in self.eqs.values() if contains(e['domnp'], x))
-        p = draw(eq['pset'])
+        eq = next(e for e in self.eqs.values() if contains(e.domnp, x))
+        p = draw(eq.pset)
         return affine_eval(p, x, self.n)
 
     # There's actually no need for this
@@ -290,30 +326,38 @@ class PWASystem(object):
         return odeint(self.evalf, x0, t)
 
     def connected(self, l1, l2):
-        xl2 = self.eqs[l2]['dom']
+        if l1 == PWASystem.OUT:
+            return False
+
+        xl2 = self.eqs[l2].dom
         eq1 = self.eqs[l1]
-        for pset in eq1['pset'].components():
+        for pset in eq1.pset.components():
             hull = CDDMatrix([[1] + list(affine_eval(p[1:], v[1:], self.n))
                               for p in vrep(pset)
-                              for v in vrep(eq1['dom'])], False)
-            if not pempty(pinters(hull, xl2)):
-                return True
+                              for v in vrep(eq1.dom)], False)
+            if l2 == PWASystem.OUT:
+                if not all(pempty(pinters(hull, CDDMatrix([hs])))
+                           for hs in xl2):
+                    return True
+            else:
+                if not pempty(pinters(hull, xl2)):
+                    return True
 
         return False
 
     def disconnect(self, l1, l2):
-        Xl1 = self.eqs[l1]['dom']
-        Xl2 = self.eqs[l2]['dom']
+        Xl1 = self.eqs[l1].dom
+        Xl2 = self.eqs[l2].dom
         if l1 == l2:
             trans = [CDDMatrix([[np.array(h).dot(v)] +
                                 list(- np.array(h).dot(reshape_x(v)))
                                 for v in vrep_pts(Xl1)])
                      for h in sample_h(Xl1.col_size - 1)]
-            ps = [pinters(self.eqs[l1]['pset'], t) for t in trans]
-            self.eqs[l1]['pset'] = max([(p, volume(p)) for p in ps],
+            ps = [pinters(self.eqs[l1].pset, t) for t in trans]
+            self.eqs[l1].pset = max([(p, volume(p)) for p in ps],
                                        key=lambda pair: pair[1])[0]
         else:
-            self.eqs[l1]['pset'] = pinters(self.eqs[l1]['pset'],
+            self.eqs[l1].pset = pinters(self.eqs[l1].pset,
                                            punderset(Xl1, Xl2))
 
 
@@ -324,14 +368,13 @@ def punderset(Xl1, Xl2):
         for h in Xl2])
 
 
-
 def reshape_x(x):
     return np.hstack((scipy.linalg.block_diag(*[x for i in range(len(x))]),
                       np.identity(len(x))))
 
+
 def sample_h(n):
     return np.vstack([np.identity(n), -np.identity(n)])
-
 
 
 class PWATS(object):
@@ -366,8 +409,6 @@ class PWATS(object):
         if (i,j) not in rem:
             rem.append((i,j))
         remall = rem + self.remove_blocking()
-        if i == j and len(remall) > 1:
-            print rem, remall
         return remall
 
     def update_connected(self, i):
@@ -417,6 +458,8 @@ class PWATS(object):
     def __ne__(self, other):
         return not self.__eq__(other)
 
+    def __hash__(self):
+        return hash(str(self.ts))
     def copy(self):
         return copy.deepcopy(self)
 
@@ -579,12 +622,13 @@ ENDC = '\033[0m'
 
 def synthesize(ts, depth=-1):
     root = Tree(Node([], ts, None, None))
-    children, feas = _synthesize(ts, [], depth, root)
+    children, feas = _synthesize(ts, [], depth, set([ts]))
     root.node.feas = feas
     root.add_children(children)
     return root
 
-def _synthesize(t, path, depth, root):
+def _synthesize(t, path, depth, memo):
+    print len(memo)
     if any((t.isblocking(q) for q in t.init)) or not t.isfeasible():
         return [], False
     elif depth != 0:
@@ -599,11 +643,13 @@ def _synthesize(t, path, depth, root):
                         for tn, (i, j) in zip(tnexts, itrace)]
             children = [Tree(Node(path + rem, tn, None, l))
                         for tn, rem, l in zip(tnexts, removed, itrace)
-                        if not root.contains(tn, compare_nodes)]
+                        if tn not in memo]
+
+            memo.update([c.node.ts for c in children])
 
             for child in children:
                 cs, feas = _synthesize(child.node.ts, child.node.path,
-                                depth - 1, root)
+                                depth - 1, memo)
                 child.node.feas = feas
                 child.add_children(cs)
 
