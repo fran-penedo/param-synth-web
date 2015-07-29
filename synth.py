@@ -17,6 +17,7 @@ import re
 
 
 class _CDDMatrix(object):
+
     def __init__(self, m):
         self._m = m
 
@@ -135,7 +136,6 @@ class CDDMatrixUnion(object):
         self._components = [m for m in self.components() if not pempty(m)]
 
 
-
 def smul(s, v):
     return [s * i for i in v]
 
@@ -228,7 +228,7 @@ def volume(m):
     else:
         #pts = vrep_pts(m)
         #dt = Delaunay(pts)
-        #return sum(simp_vol(s) for s in dt.points[dt.simplices])
+        # return sum(simp_vol(s) for s in dt.points[dt.simplices])
         pts = vrep_pts(m)
         return reduce(operator.mul, [x for x in
                                      np.amax(pts, 0) - np.amin(pts, 0)
@@ -325,7 +325,7 @@ class PWASystem(object):
     def integrate(self, t, x0):
         return odeint(self.evalf, x0, t)
 
-    def connected(self, l1, l2):
+    def connected_poly(self, l1, l2):
         if l1 == PWASystem.OUT:
             return False
 
@@ -336,8 +336,8 @@ class PWASystem(object):
                               for p in vrep(pset)
                               for v in vrep(eq1.dom)], False)
             if l2 == PWASystem.OUT:
-                if not all(pempty(pinters(hull, CDDMatrix([hs])))
-                           for hs in xl2):
+                if any(not pempty(pinters(hull, CDDMatrix([hs])))
+                       for hs in xl2):
                     return True
             else:
                 if not pempty(pinters(hull, xl2)):
@@ -355,17 +355,83 @@ class PWASystem(object):
                      for h in sample_h(Xl1.col_size - 1)]
             ps = [pinters(self.eqs[l1].pset, t) for t in trans]
             self.eqs[l1].pset = max([(p, volume(p)) for p in ps],
-                                       key=lambda pair: pair[1])[0]
+                                    key=lambda pair: pair[1])[0]
         else:
             self.eqs[l1].pset = pinters(self.eqs[l1].pset,
-                                           punderset(Xl1, Xl2))
+                                        punderset(Xl1, Xl2))
+
+    def connected_dreal(self, l1, l2):
+        if l1 == PWASystem.OUT:
+            return False
+
+        Xl1 = self.eqs[l1].dom
+        Xl2 = self.eqs[l2].dom
+        for Pl1 in self.eqs[l1].pset.components():
+            if l2 == PWASystem.OUT:
+                if any(dreal_check_sat(dreal_connect_smt(Xl1, Pl1, CDDMatrix([hs]), self.n)) for hs in Xl2):
+                    return True
+            else:
+                smt = dreal_connect_smt(Xl1, Pl1, Xl2, self.n)
+                if l1 == "10" and l2 == "10":
+                    print smt
+                if dreal_check_sat(smt):
+                    return True
+
+        return False
+
+    connected = connected_dreal
+
+
+def dreal_check_sat(smt):
+    ps = Popen('lib/dreal/bin/dReal', stdin=PIPE, stdout=PIPE)
+    out = ps.communicate(smt)[0]
+    return out.startswith("sat")
+
+
+def dreal_connect_smt(Xl1, Pl1, Xl2, n):
+    out = StringIO()
+    print >>out, "(set-logic QF_NRA)"
+    for i in range(n):
+        print >>out, "(declare-fun x%d () Real)" % i
+        print >>out, "(declare-fun x%dn () Real)" % i
+
+    for i in range(n * n + n):
+        print >>out, "(declare-fun p%d () Real)" % i
+
+    for eq in Xl1:
+        print >>out, "(assert (>= %f (- %s)))" % \
+            (eq[0],
+             " ".join(["(* x%d %f)" % (i - 1, eq[i]) for i in range(1, n + 1)]))
+
+    for eq in Xl2:
+        print >>out, "(assert (>= %f (- %s)))" % \
+            (eq[0],
+             " ".join(["(* x%dn %f)" % (i - 1, eq[i]) for i in range(1, n + 1)]))
+
+    for i, eq in enumerate(Pl1):
+        print >>out, "(assert (%s 0 (+ %f %s)))" % \
+            ("=" if i in Pl1.lin_set else "<=", eq[0],
+             " ".join(["(* p%d %f)" % (j - 1, eq[j]) for j in range(1, n * n + n + 1)]))
+
+    for i in range(n):
+        print >>out, "(assert (= x%dn (+ %s)))" % \
+            (i,
+             " ".join(["(* p%d x%d)" % (n * i + j, j) for j in range(n)] +
+                      ["p%d" % (n * n + i)]))
+
+    print >>out, "(check-sat)"
+    print >>out, "(exit)"
+
+    s = out.getvalue()
+    out.close()
+    return s
 
 
 def punderset(Xl1, Xl2):
     return CDDMatrixUnion(
         [CDDMatrix([[-h[0]] + list(- np.array(h[1:]).dot(reshape_x(x[1:])))
                     for x in vrep(Xl1)])
-        for h in Xl2])
+         for h in Xl2])
 
 
 def reshape_x(x):
@@ -406,20 +472,21 @@ class PWATS(object):
         self._pwa.disconnect(self.states[i], self.states[j])
         rem = self.update_connected(i)
         self.ts[i, j] = 0
-        if (i,j) not in rem:
-            rem.append((i,j))
+        if (i, j) not in rem:
+            rem.append((i, j))
         remall = rem + self.remove_blocking()
         return remall
 
     def update_connected(self, i):
-        remove = [j for j in self.ts[i,:].nonzero()[1]
+        remove = [j for j in self.ts[i, :].nonzero()[1]
                   if not self._pwa.connected(self.states[i], self.states[j])]
         self.ts[i, remove] = 0
         return zip([i for x in remove], remove)
 
     def isblocking(self, i):
-        return self.issink(i) and (self.ts[:,i].getnnz() > 0 or
-                                               i in self.init)
+        return self.issink(i) and (self.ts[:, i].getnnz() > 0 or
+                                   i in self.init)
+
     def issink(self, i):
         return self.ts[i, ].getnnz() == 0
 
@@ -428,7 +495,7 @@ class PWATS(object):
             r = next(i for i in range(len(self.states))
                      if self.isblocking(i) and i not in self.init)
             removed = sum([self.remove_link(i, r)
-                           for i in self.ts[:,r].nonzero()[0]], [])
+                           for i in self.ts[:, r].nonzero()[0]], [])
             return removed + self.remove_blocking()
         except StopIteration:
             return []
@@ -460,9 +527,9 @@ class PWATS(object):
 
     def __hash__(self):
         return hash(str(self.ts))
+
     def copy(self):
         return copy.deepcopy(self)
-
 
     def toNUSMV(self):
         out = StringIO()
@@ -557,14 +624,15 @@ class Tree(object):
     def pprint(self, indent):
         return ''.join([(' ' * indent + '{}').format(l) for l in
                         ['{%s,\n' % self.node.path.__str__(),
-                        '%s,\n' % self.node.path.__str__(),
-                        '[\n%s\n' % ',\n'.join([x.pprint(indent + 2)
-                                                    for x in self._children]),
-                        ']}']
+                         '%s,\n' % self.node.path.__str__(),
+                         '[\n%s\n' % ',\n'.join([x.pprint(indent + 2)
+                                                 for x in self._children]),
+                         ']}']
                         ])
 
 
 class Node(object):
+
     def __init__(self, path, ts, feas, trace):
         self._path = path
         self._ts = ts
@@ -620,12 +688,14 @@ def leaves(tree):
 PATH = '\033[91m'
 ENDC = '\033[0m'
 
+
 def synthesize(ts, depth=-1):
     root = Tree(Node([], ts, None, None))
     children, feas = _synthesize(ts, [], depth, set([ts]))
     root.node.feas = feas
     root.add_children(children)
     return root
+
 
 def _synthesize(t, path, depth, memo):
     print len(memo)
@@ -640,7 +710,7 @@ def _synthesize(t, path, depth, memo):
         else:
             tnexts = [t.copy() for l in trace]
             removed = [[(tn.states[a], tn.states[b]) for a, b in tn.remove_link(i, j)]
-                        for tn, (i, j) in zip(tnexts, itrace)]
+                       for tn, (i, j) in zip(tnexts, itrace)]
             children = [Tree(Node(path + rem, tn, None, l))
                         for tn, rem, l in zip(tnexts, removed, itrace)
                         if tn not in memo]
@@ -649,10 +719,11 @@ def _synthesize(t, path, depth, memo):
 
             for child in children:
                 cs, feas = _synthesize(child.node.ts, child.node.path,
-                                depth - 1, memo)
+                                       depth - 1, memo)
                 child.node.feas = feas
                 child.add_children(cs)
 
             return children, True
     else:
         return [], True
+
