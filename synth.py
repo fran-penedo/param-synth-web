@@ -14,6 +14,7 @@ from math import factorial
 from subprocess import Popen, PIPE
 import copy
 import re
+import tempfile
 
 
 class _CDDMatrix(object):
@@ -383,9 +384,21 @@ class PWASystem(object):
 
 
 def dreal_check_sat(smt):
-    ps = Popen('lib/dreal/bin/dReal', stdin=PIPE, stdout=PIPE)
-    out = ps.communicate(smt)[0]
-    return out.startswith("sat")
+    t = tempfile.TemporaryFile()
+    t.write(smt)
+    t.seek(0)
+    ps = Popen('lib/dreal/bin/dReal', stdin=t, stdout=PIPE, stderr=PIPE)
+    out, err = ps.communicate()
+    if out.startswith("sat"):
+        return True
+    elif out.startswith("unsat"):
+        return False
+    else:
+        print smt
+        print out
+        print err
+        raise Exception()
+
 
 
 def dreal_connect_smt(Xl1, Pl1, Xl2, n):
@@ -399,18 +412,18 @@ def dreal_connect_smt(Xl1, Pl1, Xl2, n):
         print >>out, "(declare-fun p%d () Real)" % i
 
     for eq in Xl1:
-        print >>out, "(assert (>= %f (- %s)))" % \
+        print >>out, "(assert (< 0 (+ %f %s)))" % \
             (eq[0],
              " ".join(["(* x%d %f)" % (i - 1, eq[i]) for i in range(1, n + 1)]))
 
     for eq in Xl2:
-        print >>out, "(assert (>= %f (- %s)))" % \
+        print >>out, "(assert (< 0.01 (+ %f %s)))" % \
             (eq[0],
              " ".join(["(* x%dn %f)" % (i - 1, eq[i]) for i in range(1, n + 1)]))
 
     for i, eq in enumerate(Pl1):
         print >>out, "(assert (%s 0 (+ %f %s)))" % \
-            ("=" if i in Pl1.lin_set else "<=", eq[0],
+            ("=" if i in Pl1.lin_set else "<", eq[0],
              " ".join(["(* p%d %f)" % (j - 1, eq[j]) for j in range(1, n * n + n + 1)]))
 
     for i in range(n):
