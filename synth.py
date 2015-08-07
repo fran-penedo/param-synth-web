@@ -382,17 +382,37 @@ class PWASystem(object):
 
     connected = connected_dreal
 
+FP_REGEXP = "[+-]? *(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+
+def dreal_find_p(smt):
+    check, out = _dreal_check_sat(smt, verbose=True)
+    print check
+    print out
+    if check:
+        start = out.rfind("SAT with the following box")
+        r = re.compile("p([0-9]+) : \[(%s), (%s)\]" % (FP_REGEXP, FP_REGEXP))
+        p_tuples = sorted([(int(i), (float(b) - float(a)) / 2)
+                           for i, a, b in r.findall(out[start:])])
+        return zip(*p_tuples)[1]
+    else:
+        return None
 
 def dreal_check_sat(smt):
+    return _dreal_check_sat(smt)[0]
+
+def _dreal_check_sat(smt, verbose=False):
     t = tempfile.TemporaryFile()
     t.write(smt)
     t.seek(0)
-    ps = Popen('lib/dreal/bin/dReal', stdin=t, stdout=PIPE, stderr=PIPE)
+    process = ["lib/dreal/bin/dReal"]
+    if verbose:
+        process.append("-verbose")
+    ps = Popen(process, stdin=t, stdout=PIPE, stderr=PIPE)
     out, err = ps.communicate()
     if out.startswith("sat"):
-        return True
+        return True, err
     elif out.startswith("unsat"):
-        return False
+        return False, err
     else:
         print smt
         print out
@@ -400,34 +420,40 @@ def dreal_check_sat(smt):
         raise Exception()
 
 
+def dreal_linear(eq, prefix):
+    return " ".join(["(* %s%d %f)" %
+                     (prefix, i - 1, eq[i]) for i in range(1, len(eq))])
 
-def dreal_connect_smt(Xl1, Pl1, Xl2, n):
+def dreal_connect_smt(Xl1, Pl1, Xl2, n, PExcl=[]):
     out = StringIO()
     print >>out, "(set-logic QF_NRA)"
     for i in range(n):
         print >>out, "(declare-fun x%d () Real)" % i
-        print >>out, "(declare-fun x%dn () Real)" % i
+        print >>out, "(declare-fun xn%d () Real)" % i
 
     for i in range(n * n + n):
         print >>out, "(declare-fun p%d () Real)" % i
 
     for eq in Xl1:
-        print >>out, "(assert (< 0 (+ %f %s)))" % \
-            (eq[0],
-             " ".join(["(* x%d %f)" % (i - 1, eq[i]) for i in range(1, n + 1)]))
+        print >>out, "(assert (<= 0 (+ %f %s)))" % \
+            (eq[0], dreal_linear(eq, "x"))
 
     for eq in Xl2:
+        # Slack so the strict inequality is enforced
         print >>out, "(assert (< 0.01 (+ %f %s)))" % \
-            (eq[0],
-             " ".join(["(* x%dn %f)" % (i - 1, eq[i]) for i in range(1, n + 1)]))
+            (eq[0], dreal_linear(eq, "xn"))
 
     for i, eq in enumerate(Pl1):
         print >>out, "(assert (%s 0 (+ %f %s)))" % \
-            ("=" if i in Pl1.lin_set else "<", eq[0],
-             " ".join(["(* p%d %f)" % (j - 1, eq[j]) for j in range(1, n * n + n + 1)]))
+            ("=" if i in Pl1.lin_set else "<=", eq[0], dreal_linear(eq, "p"))
+
+    for i, eq in enumerate(PExcl):
+        if i not in PExcl.lin_set:
+            print >>out, "(assert (> 0 (+ %f %s)))" % \
+                (eq[0], dreal_linear(eq, "p"))
 
     for i in range(n):
-        print >>out, "(assert (= x%dn (+ %s)))" % \
+        print >>out, "(assert (= xn%d (+ %s)))" % \
             (i,
              " ".join(["(* p%d x%d)" % (n * i + j, j) for j in range(n)] +
                       ["p%d" % (n * n + i)]))

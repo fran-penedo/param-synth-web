@@ -153,6 +153,15 @@ def dreal_connect_smt_test():
 
     print dreal_connect_smt(Xl1, Pl1, Xl2, 2)
 
+def dreal_find_p_test():
+    Xl1 = CDDMatrix([[1, 0, 0], [1, 0, 1], [1, 1, 0], [1, 1, 1]], False)
+    Pl1 = CDDMatrix([[1, 1, 0, 0, 1, 0, 0], [1, 1, 0, 0, 1, 1, 0],
+                    [1, 1, 0, 0, 1, 0, 1], [1, 1, 0, 0, 1, 1, 1]], False)
+    Xl2 = CDDMatrix([[1, 1, 0], [1, 1, 1], [1, 2, 0], [1, 2, 1]], False)
+
+    smt = dreal_connect_smt(Xl1, Pl1, Xl2, 2)
+    p = dreal_find_p(smt)
+    print p
 
 def pwa_connected_dreal_test():
     constr = [[0, 1], [-1, 1]]
