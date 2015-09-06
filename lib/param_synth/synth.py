@@ -105,7 +105,7 @@ def vrep(m):
 
 
 def vrep_pts(m):
-    return [v[1:] for v in vrep(m)]
+    return np.array([v[1:] for v in vrep(m)])
 
 
 def extend(a, b):
