@@ -157,8 +157,12 @@ Graph.prototype.transformContext = function() {
     context.scale(this.scaleX, -this.scaleY);
 };
 
-Graph.prototype.transformPoint = function(x, y) {
+Graph.prototype.toScale = function(x, y) {
     return [(x - this.centerX) / this.scaleX, - (y - this.centerY) / this.scaleY]
+};
+
+Graph.prototype.fromScale = function(x, y) {
+    return [(x  * this.scaleX + this.centerX), (- y * this.scaleY + this.centerY)]
 };
 
 Graph.prototype.renderPoly = function() {
@@ -220,12 +224,36 @@ Graph.prototype.renderCurConstr = function() {
 
 }
 
+Graph.prototype.drawPartitionNames = function() {
+    var context = this.context;
+    context.save();
+
+    for (var i = 0; i < this.partition["partition"].length; i++) {
+        var set = this.partition["partition"][i];
+        var center = set["centroid"];
+        var tcenter = this.fromScale(center[0], center[1]);
+        context.fillText(set["name"], tcenter[0], tcenter[1]);
+    }
+
+    context.restore();
+}
+
 Graph.prototype.click = function(x, y) {
     this.handler.click(this, x, y);
 };
 
 Graph.prototype.dblclick = function(x, y) {
     this.handler.dblclick(this, x, y);
+};
+
+Graph.prototype.getPartition = function() {
+    var graph = this;
+    $.post($SCRIPT_ROOT + "/partition", 
+            JSON.stringify({"poly": this.poly, "constrs": this.constrs}),
+            function(data){
+                graph.partition = data;
+                graph.drawPartitionNames();
+            }, "json");
 };
 
 function addPolygonPoint(graph, x, y) {
@@ -265,21 +293,37 @@ var Handlers = {
     "const": new Handler(addConstrPoint, function(x, y){})
 }
 
+function getPos(e) {
+    var x;
+    var y;
+    if (e.pageX || e.pageY) { 
+    x = e.pageX;
+    y = e.pageY;
+    }
+    else { 
+    x = e.clientX + document.body.scrollLeft + document.documentElement.scrollLeft; 
+    y = e.clientY + document.body.scrollTop + document.documentElement.scrollTop; 
+    } 
+    x -= e.target.offsetLeft;
+    y -= e.target.offsetTop;
+    return [x, y]
+}
+
 function handleClick(event) {
-    var x = event.clientX - event.target.offsetLeft;
-    var y = event.clientY - event.target.offsetTop;
+    var p = getPos(event);
+    var x = p[0], y = p[1];
 
     var graph = event.data;
-    var p = graph.transformPoint(x, y);
+    var p = graph.toScale(x, y);
     graph.click(p[0], p[1])
 }
 
 function handleDblClick(event) {
-    var x = event.clientX - event.target.offsetLeft;
-    var y = event.clientY - event.target.offsetTop;
+    var p = getPos(event);
+    var x = p[0], y = p[1];
 
     var graph = event.data;
-    var p = graph.transformPoint(x, y);
+    var p = graph.toScale(x, y);
     graph.dblclick(p[0], p[1])
 }
 
@@ -296,6 +340,11 @@ function draw() {
     $("input[name='mode']").click(function(event) {
         myGraph.handler = Handlers[event.target.value];
     });
+    $("#partition").click(function(event) {
+        myGraph.getPartition();
+    });
+
+    window.myGraph = myGraph;
 }
 
 

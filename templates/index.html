@@ -3,6 +3,9 @@
         <title>Foo</title>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
         <script src="{{ url_for('static', filename='javascript/canvas.js') }}"></script>
+        <script type=text/javascript>
+            $SCRIPT_ROOT = {{ request.script_root|tojson|safe }};
+        </script>
     </head>
     <body>
         <div>
@@ -11,6 +14,7 @@
         <div>
             <input type="radio" name="mode" value="poly" checked>Polygon</input>
             <input type="radio" name="mode" value="const">Constraint</input>
+            <input type="button" value="Partition" id="partition"/>
         </div>
     </body>
 </html>
