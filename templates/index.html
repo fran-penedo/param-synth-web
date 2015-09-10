@@ -5,16 +5,43 @@
         <script src="{{ url_for('static', filename='javascript/canvas.js') }}"></script>
         <script type=text/javascript>
             $SCRIPT_ROOT = {{ request.script_root|tojson|safe }};
+            $EXAMPLE_MODEL = "{{ url_for('static', filename='models/model1.json') }}";
         </script>
     </head>
     <body>
         <div>
-            <canvas id="canvas" width="500" height="500"></canvas>
+            <canvas id="canvas" width="300" height="300"></canvas>
         </div>
         <div>
             <input type="radio" name="mode" value="poly" checked>Polygon</input>
             <input type="radio" name="mode" value="const">Constraint</input>
+            <input type="radio" name="mode" value="select">Select</input>
             <input type="button" value="Partition" id="partition"/>
+            <input type="button" value="Synthesize" id="synthesize"/>
+        </div>
+        <div>
+            <div>
+                <label for="Initial_State">Initial State</label> <input type="text/submit/hidden/button" name="Initial_State" value="" id="Initial_State">
+            </div>
+            <div>
+                <label for="Spec">Spec</label> <input type="text/submit/hidden/button" name="Spec" value="" id="Spec">
+            </div>
+        </div>
+        <div>
+            <div>
+                <label for="System_Mode">System Mode</label> <input type="text/submit/hidden/button" name="System_Mode" value="" id="System_Mode" readonly="">
+            </div>
+            <div>
+                <label for="Coefficients_Matrix">Coefficients Matrix</label> <input type="text/submit/hidden/button" name="Coefficients_Matrix" value="" id="Coefficients_Matrix">
+            </div>
+            <canvas id="par_canvas" width="300" height="300"></canvas>
+        </div>
+        <div>
+            <div>
+                <input type="button" value="Save" id="save"/>
+                <input type="button" value="Load" id="load"/>
+            </div>
+            <textarea name="model" id="model" rows="10" cols="50"></textarea>
         </div>
     </body>
 </html>

@@ -13,11 +13,22 @@ function Graph(config) {
     this.poly_closed = false;
     this.cur_constr = [];
     this.constrs = [];
+    if (config.main) {
+        this.par_canvas = new Graph({
+            canvasId: 'par_canvas',
+            minX: -10,
+            minY: -10,
+            maxX: 10,
+            maxY: 10,
+            unitsPerTick: 1
+        });
+        this.par_canvas.handler = Handlers["poly"];
+    }
 
     // constants
     this.axisColor = '#aaa';
     this.font = '8pt Calibri';
-    this.tickSize = 20;
+    this.tickSize = 10;
 
     // relationships
     this.context = this.canvas.getContext('2d');
@@ -32,8 +43,7 @@ function Graph(config) {
     this.scaleY = this.canvas.height / this.rangeY;
 
     // draw x and y axis
-    this.drawXAxis();
-    this.drawYAxis();
+    this.erase();
 }
 
 Graph.prototype.drawXAxis = function() {
@@ -60,7 +70,7 @@ Graph.prototype.drawXAxis = function() {
         context.moveTo(xPos, this.centerY - this.tickSize / 2);
         context.lineTo(xPos, this.centerY + this.tickSize / 2);
         context.stroke();
-        context.fillText(unit, xPos, this.centerY + this.tickSize / 2 + 3);
+        //context.fillText(unit, xPos, this.centerY + this.tickSize / 2 + 3);
         unit -= this.unitsPerTick;
         xPos = Math.round(xPos - xPosIncrement);
     }
@@ -72,7 +82,9 @@ Graph.prototype.drawXAxis = function() {
         context.moveTo(xPos, this.centerY - this.tickSize / 2);
         context.lineTo(xPos, this.centerY + this.tickSize / 2);
         context.stroke();
-        context.fillText(unit, xPos, this.centerY + this.tickSize / 2 + 3);
+        if (unit == 1) {
+            context.fillText(unit, xPos, this.centerY + this.tickSize / 2 + 3);
+        }
         unit += this.unitsPerTick;
         xPos = Math.round(xPos + xPosIncrement);
     }
@@ -103,7 +115,9 @@ Graph.prototype.drawYAxis = function() {
         context.moveTo(this.centerX - this.tickSize / 2, yPos);
         context.lineTo(this.centerX + this.tickSize / 2, yPos);
         context.stroke();
-        context.fillText(unit, this.centerX - this.tickSize / 2 - 3, yPos);
+        if (unit == 1) {
+            context.fillText(unit, this.centerX - this.tickSize / 2 - 3, yPos);
+        }
         unit += this.unitsPerTick;
         yPos = Math.round(yPos - yPosIncrement);
     }
@@ -115,7 +129,7 @@ Graph.prototype.drawYAxis = function() {
         context.moveTo(this.centerX - this.tickSize / 2, yPos);
         context.lineTo(this.centerX + this.tickSize / 2, yPos);
         context.stroke();
-        context.fillText(unit, this.centerX - this.tickSize / 2 - 3, yPos);
+        //context.fillText(unit, this.centerX - this.tickSize / 2 - 3, yPos);
         unit -= this.unitsPerTick;
         yPos = Math.round(yPos + yPosIncrement);
     }
@@ -165,13 +179,27 @@ Graph.prototype.fromScale = function(x, y) {
     return [(x  * this.scaleX + this.centerX), (- y * this.scaleY + this.centerY)]
 };
 
+
+Graph.prototype.drawPoly = function(poly) {
+    this.poly = poly;
+    this.poly_closed = true;
+    this.erase();
+    this.renderPoly();
+};
+
+Graph.prototype.erase = function() {
+    this.context.clearRect(0, 0, canvas.width, canvas.height);
+    this.drawXAxis();
+    this.drawYAxis();
+};
+
 Graph.prototype.renderPoly = function() {
     var context = this.context;
     context.save();
     this.transformContext();
     context.lineWidth = 0.1;
 
-    if (this.poly.length > 1) {
+    if (this.poly != undefined && this.poly.length > 1) {
         context.beginPath();
         context.moveTo(this.poly[0][0], this.poly[0][1]);
         for (var i = 1; i < this.poly.length; i++) {
@@ -221,22 +249,28 @@ Graph.prototype.renderCurConstr = function() {
     }
 
     context.restore();
+};
 
-}
+Graph.prototype.renderConstrs = function() {
+    for (var i = 0; i < this.constrs.length; i++) {
+        this.cur_constr = this.constrs[i];
+        this.renderCurConstr();
+    }
+};
 
 Graph.prototype.drawPartitionNames = function() {
     var context = this.context;
     context.save();
 
-    for (var i = 0; i < this.partition["partition"].length; i++) {
-        var set = this.partition["partition"][i];
+    for (var i = 0; i < this.partition.length; i++) {
+        var set = this.partition[i];
         var center = set["centroid"];
         var tcenter = this.fromScale(center[0], center[1]);
         context.fillText(set["name"], tcenter[0], tcenter[1]);
     }
 
     context.restore();
-}
+};
 
 Graph.prototype.click = function(x, y) {
     this.handler.click(this, x, y);
@@ -246,17 +280,87 @@ Graph.prototype.dblclick = function(x, y) {
     this.handler.dblclick(this, x, y);
 };
 
-Graph.prototype.getPartition = function() {
+Graph.prototype.getPartition = function(callback) {
     var graph = this;
     $.post($SCRIPT_ROOT + "/partition", 
             JSON.stringify({"poly": this.poly, "constrs": this.constrs}),
             function(data){
-                graph.partition = data;
+                graph.partition = data['partition'];
                 graph.drawPartitionNames();
+                if (callback) {
+                    callback();
+                }
             }, "json");
 };
 
+Graph.prototype.saveSelected = function() {
+    if (this.selected != undefined) {
+        var pold = this.partition[this.selected];
+        pold.A = $("#Coefficients_Matrix").val();
+        pold.b_space = this.par_canvas.poly;
+    }
+};
+
+Graph.prototype.select = function(i) {
+    this.saveSelected();
+    this.selected = i;
+    var p = this.partition[i];
+    $("#System_Mode").val(p.name);
+    $("#Coefficients_Matrix").val(p.A);
+    this.par_canvas.drawPoly(p.b_space);
+};
+
+Graph.prototype.synthesize = function() {
+
+};
+
+Graph.prototype.getModel = function() {
+    var init = $("#Initial_State").val();
+    var spec = $("#Spec").val();
+    if (this.partition != undefined) {
+        this.saveSelected();
+        var ps = [];
+        for (var i = 0; i < this.partition.length; i++) {
+            var p = this.partition[i];
+            ps.push({
+                A: p.A,
+                b_space: p.b_space
+            });
+        }
+        var ts = {
+            constrs: this.constrs,
+            poly: this.poly,
+            pars: ps,
+            init: init,
+            spec: spec
+        };
+        return ts;
+    }
+};
+
+Graph.prototype.loadModel = function(ts) {
+    this.poly = ts.poly;
+    this.poly_closed = true;
+    this.constrs = ts.constrs;
+    this.renderPoly();
+    this.renderConstrs();
+    $("#Initial_State").val(ts.init);
+    $("#Spec").val(ts.spec);
+    var graph = this;
+    this.getPartition(function() {
+        for (var i = 0; i < ts.pars.length; i++) {
+            var p = graph.partition[i];
+            p.A = ts.pars[i].A;
+            p.b_space = ts.pars[i].b_space;
+        }
+    });
+}
+
 function addPolygonPoint(graph, x, y) {
+    if (graph.poly == undefined) {
+        graph.poly = [];
+        graph.poly_closed = false;
+    }
     if (!graph.poly_closed) {
         graph.poly.push([x,y]);
         graph.renderPoly();
@@ -264,7 +368,7 @@ function addPolygonPoint(graph, x, y) {
 }
 
 function closePolygon(graph, x, y) {
-    if (!graph.poly_closed) {
+    if (!graph.poly_closed && graph.poly.length >= 2) {
         graph.poly.push([x, y]);
         graph.poly_closed = true;
         graph.renderPoly();
@@ -283,6 +387,25 @@ function addConstrPoint(graph, x, y) {
 
 }
 
+function selectSet(graph, x, y) {
+    parts = graph.partition;
+    for (var i = 0; i < parts.length; i++) {
+        if (contains(parts[i].constrs, x, y)) {
+            graph.select(i);
+        }
+    }
+}
+
+function contains(constrs, x, y) {
+    for (var i = 0; i < constrs.length; i++) {
+        c = constrs[i];
+        if (c[0] + x * c[1] + y * c[2] <= 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function Handler(click, dblclick) {
     this.click = click;
     this.dblclick = dblclick;
@@ -290,7 +413,8 @@ function Handler(click, dblclick) {
 
 var Handlers = {
     "poly": new Handler(addPolygonPoint, closePolygon),
-    "const": new Handler(addConstrPoint, function(x, y){})
+    "const": new Handler(addConstrPoint, function(graph, x, y){}),
+    "select": new Handler(selectSet, function(graph, x, y){})
 }
 
 function getPos(e) {
@@ -334,7 +458,8 @@ function draw() {
         minY: -10,
         maxX: 10,
         maxY: 10,
-        unitsPerTick: 1
+        unitsPerTick: 1,
+        main: true
     });
     myGraph.handler = Handlers["poly"];
     $("input[name='mode']").click(function(event) {
@@ -342,7 +467,18 @@ function draw() {
     });
     $("#partition").click(function(event) {
         myGraph.getPartition();
+        $("input[name=mode][value=select]").click();
     });
+    $("#synthesize").click(function(event) {
+        myGraph.synthesize();
+    });
+    $("#save").click(function(event) {
+        $("#model").val(JSON.stringify(myGraph.getModel()));
+    });
+    $("#load").click(function(event) {
+        myGraph.loadModel(JSON.parse($("#model").val()));
+    });
+    $("#model").load($EXAMPLE_MODEL);
 
     window.myGraph = myGraph;
 }

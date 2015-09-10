@@ -15,7 +15,6 @@ def partition():
     data = request.get_json(True)
     poly = data["poly"]
     constrs = data["constrs"]
-    print constrs
 
     return jsonify(partition=build_partition(poly, constrs))
 
@@ -27,13 +26,12 @@ def build_partition(poly_vs, constrs):
     constrs_vect = [[- cons[0][0] * v[0] - cons[0][1] * v[1]] + v
                     for cons, v in zip(constrs, constrs_vect)]
 
-    p = synth.partition(poly, constrs_vect)
-    print p
+    p = sorted(synth.partition(poly, constrs_vect).items())
 
     p_simple = [{"name": k,
                  "constrs": [c for c in m],
                  "centroid": centroid(m)}
-                for k, m in p.items()]
+                for k, m in p]
 
     return p_simple
 
