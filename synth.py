@@ -15,6 +15,7 @@ from subprocess import Popen, PIPE
 import copy
 import re
 import tempfile
+import os
 
 
 class _CDDMatrix(object):
@@ -159,6 +160,11 @@ def pempty(m):
     lp.solve()
     return lp.status == cdd.LPStatusType.INCONSISTENT
 
+
+def pdiff(a, b):
+    if isinstance(b, CDDMatrixUnion):
+        raise NotImplementedError()
+    return pinters(a, CDDMatrixUnion([CDDMatrix(smul(-1, v)) for v in b]))
 
 def pinters(a, b):
     if isinstance(b, CDDMatrixUnion):
@@ -369,12 +375,12 @@ class PWASystem(object):
         Xl2 = self.eqs[l2].dom
         for Pl1 in self.eqs[l1].pset.components():
             if l2 == PWASystem.OUT:
-                if any(dreal_check_sat(dreal_connect_smt(Xl1, Pl1, CDDMatrix([hs]), self.n)) for hs in Xl2):
+                if any(dreal_check_sat(dreal_connect_smt(Xl1, Pl1, CDDMatrix([hs]))) for hs in Xl2):
                     return True
             else:
-                smt = dreal_connect_smt(Xl1, Pl1, Xl2, self.n)
-                if l1 == "10" and l2 == "10":
-                    print smt
+                smt = dreal_connect_smt(Xl1, Pl1, Xl2)
+                #if l1 == "10" and l2 == "10":
+                #    print smt
                 if dreal_check_sat(smt):
                     return True
 
@@ -386,33 +392,35 @@ FP_REGEXP = "[+-]? *(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 
 def dreal_find_p(smt):
     check, out = _dreal_check_sat(smt, verbose=True)
-    print check
-    print out
     if check:
-        start = out.rfind("SAT with the following box")
-        r = re.compile("p([0-9]+) : \[(%s), (%s)\]" % (FP_REGEXP, FP_REGEXP))
-        p_tuples = sorted([(int(i), (float(b) - float(a)) / 2)
-                           for i, a, b in r.findall(out[start:])])
+        r = re.compile("p([0-9]+) : \[ ENTIRE \] = \[(%s), (%s)\]" % (FP_REGEXP, FP_REGEXP))
+        p_tuples = sorted([(int(i), (float(a) + float(b)) / 2)
+                           for i, a, b in r.findall(out)])
         return zip(*p_tuples)[1]
     else:
         return None
 
+
 def dreal_check_sat(smt):
     return _dreal_check_sat(smt)[0]
 
+
 def _dreal_check_sat(smt, verbose=False):
-    t = tempfile.TemporaryFile()
+    t = tempfile.NamedTemporaryFile(suffix=".smt2", delete=False)
     t.write(smt)
-    t.seek(0)
-    process = ["lib/dreal/bin/dReal"]
+    t.close()
+    process = ["lib/dReal/bin/dReal"]
     if verbose:
-        process.append("-verbose")
-    ps = Popen(process, stdin=t, stdout=PIPE, stderr=PIPE)
+        process.append("--model")
+    process.append(t.name)
+    ps = Popen(process, stdout=PIPE, stderr=PIPE,
+               env=dict(os.environ, LD_LIBRARY_PATH="lib/dReal/lib"))
     out, err = ps.communicate()
-    if out.startswith("sat"):
-        return True, err
-    elif out.startswith("unsat"):
-        return False, err
+    outlines = out.splitlines()
+    if outlines[0].startswith("delta-sat") or outlines[-1].startswith("delta-sat"):
+        return True, out
+    elif outlines[0].startswith("unsat") or outlines[-1].startswith("unsat"):
+        return False, out
     else:
         print smt
         print out
@@ -424,7 +432,18 @@ def dreal_linear(eq, prefix):
     return " ".join(["(* %s%d %f)" %
                      (prefix, i - 1, eq[i]) for i in range(1, len(eq))])
 
-def dreal_connect_smt(Xl1, Pl1, Xl2, n, PExcl=[]):
+
+def dreal_poly(poly, prefix, slack=0):
+    return "(and %s)" % " ".join(["(%s %f (+ %f %s))" %
+                                  ("=" if i in poly.lin_set else "<=",
+                                   slack, eq[0], dreal_linear(eq, prefix))
+                                  for i, eq in enumerate(poly)])
+
+
+def dreal_connect_smt(Xl1, Pl1, Xl2, PExcl=None, excl_slack=0):
+    n = len(Xl1[0]) - 1
+    if PExcl is None:
+        PExcl = []
     out = StringIO()
     print >>out, "(set-logic QF_NRA)"
     for i in range(n):
@@ -434,23 +453,14 @@ def dreal_connect_smt(Xl1, Pl1, Xl2, n, PExcl=[]):
     for i in range(n * n + n):
         print >>out, "(declare-fun p%d () Real)" % i
 
-    for eq in Xl1:
-        print >>out, "(assert (<= 0 (+ %f %s)))" % \
-            (eq[0], dreal_linear(eq, "x"))
+    print >>out, "(assert %s)" % dreal_poly(Xl1, "x")
+    print >>out, "(assert %s)" % dreal_poly(Xl2, "xn", 0.01)
 
-    for eq in Xl2:
-        # Slack so the strict inequality is enforced
-        print >>out, "(assert (< 0.01 (+ %f %s)))" % \
-            (eq[0], dreal_linear(eq, "xn"))
+    if len(Pl1) > 0:
+        print >>out, "(assert %s)" % dreal_poly(Pl1, "p")
 
-    for i, eq in enumerate(Pl1):
-        print >>out, "(assert (%s 0 (+ %f %s)))" % \
-            ("=" if i in Pl1.lin_set else "<=", eq[0], dreal_linear(eq, "p"))
-
-    for i, eq in enumerate(PExcl):
-        if i not in PExcl.lin_set:
-            print >>out, "(assert (> 0 (+ %f %s)))" % \
-                (eq[0], dreal_linear(eq, "p"))
+    if len(PExcl) > 0:
+        print >>out, "(assert (not %s))" % dreal_poly(PExcl, "p", -excl_slack)
 
     for i in range(n):
         print >>out, "(assert (= xn%d (+ %s)))" % \
@@ -737,7 +747,7 @@ def synthesize(ts, depth=-1):
 
 
 def _synthesize(t, path, depth, memo):
-    print len(memo)
+    #print len(memo)
     if any((t.isblocking(q) for q in t.init)) or not t.isfeasible():
         return [], False
     elif depth != 0:
