@@ -386,7 +386,7 @@ class PWASystem(object):
 
         return False
 
-    connected = connected_dreal
+    connected = connected_poly
 
 FP_REGEXP = "[+-]? *(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 
