@@ -10,6 +10,7 @@ app.debug = True
 def index():
     return render_template('index.html')
 
+
 @app.route("/partition", methods=['POST'])
 def partition():
     data = request.get_json(True)
@@ -17,6 +18,16 @@ def partition():
     constrs = data["constrs"]
 
     return jsonify(partition=build_partition(poly, constrs))
+
+
+@app.route("/synthesize", methods=['POST'])
+def synthesize():
+    data = request.get_json(True)
+    constrs = data["constrs"]
+    poly = data["poly"]
+    psets = data["pars"]
+    init = data["init"]
+    spec = data["spec"]
 
 
 def build_partition(poly_vs, constrs):

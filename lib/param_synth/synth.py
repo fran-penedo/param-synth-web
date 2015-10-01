@@ -638,8 +638,9 @@ def parse_nusmv(out):
 
 class Tree(object):
 
-    def __init__(self, node, children=None):
+    def __init__(self, node, children=None, parent=None):
         self._node = node
+        self._parent = parent
         if children is None:
             self._children = []
         else:
@@ -655,11 +656,22 @@ class Tree(object):
     def node(self):
         return self._node
 
+    @property
+    def parent(self):
+        return self._parent
+
+    @parent.setter
+    def parent(self, value):
+        self._parent = value
+
     def add_child(self, tree):
         self._children.append(tree)
+        tree.parent = self
 
     def add_children(self, children):
         self._children.extend(children)
+        for t in children:
+            tree.parent = self
 
     def contains(self, item, f):
         if f(self._node, item):
