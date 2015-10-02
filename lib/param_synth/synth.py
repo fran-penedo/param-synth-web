@@ -16,6 +16,12 @@ import copy
 import re
 import tempfile
 import os
+from os import path
+
+LIB_DIR = path.join(path.dirname(__file__), 'lib')
+NUSMV = path.join(LIB_DIR, 'nusmv', 'NuSMV')
+DREAL = path.join(LIB_DIR, 'dReal', 'bin', 'dReal')
+DREAL_LIBS = path.join(LIB_DIR, 'dReal', 'lib')
 
 
 class _CDDMatrix(object):
@@ -98,6 +104,7 @@ def CDDMatrix(rows, ineq=True):
         m.rep_type = cdd.RepType.GENERATOR
         m = cdd.Polyhedron(m).get_inequalities()
     m.rep_type = cdd.RepType.INEQUALITY
+    m.canonicalize()
     return _CDDMatrix(m)
 
 
@@ -409,12 +416,12 @@ def _dreal_check_sat(smt, verbose=False):
     t = tempfile.NamedTemporaryFile(suffix=".smt2", delete=False)
     t.write(smt)
     t.close()
-    process = ["lib/dReal/bin/dReal"]
+    process = [DREAL]
     if verbose:
         process.append("--model")
     process.append(t.name)
     ps = Popen(process, stdout=PIPE, stderr=PIPE,
-               env=dict(os.environ, LD_LIBRARY_PATH="lib/dReal/lib"))
+               env=dict(os.environ, LD_LIBRARY_PATH=DREAL_LIBS))
     out, err = ps.communicate()
     outlines = out.splitlines()
     if outlines[0].startswith("delta-sat") or outlines[-1].startswith("delta-sat"):
@@ -550,7 +557,7 @@ class PWATS(object):
             return []
 
     def modelcheck(self):
-        ps = Popen('lib/nusmv/NuSMV', stdin=PIPE, stdout=PIPE)
+        ps = Popen(NUSMV, stdin=PIPE, stdout=PIPE)
         out = ps.communicate(self.toNUSMV())[0]
         try:
             return parse_nusmv(out)
@@ -671,7 +678,7 @@ class Tree(object):
     def add_children(self, children):
         self._children.extend(children)
         for t in children:
-            tree.parent = self
+            t.parent = self
 
     def contains(self, item, f):
         if f(self._node, item):
@@ -751,15 +758,17 @@ ENDC = '\033[0m'
 
 
 def synthesize(ts, depth=-1):
+    print "Starting synthesis"
     root = Tree(Node([], ts, None, None))
     children, feas = _synthesize(ts, [], depth, set([ts]))
     root.node.feas = feas
     root.add_children(children)
+    print "\nSynthesis completed"
     return root
 
 
 def _synthesize(t, path, depth, memo):
-    #print len(memo)
+    print '\rAnalized {} transition systems'.format(len(memo)),
     if any((t.isblocking(q) for q in t.init)) or not t.isfeasible():
         return [], False
     elif depth != 0:
