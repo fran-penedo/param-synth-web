@@ -5,7 +5,7 @@
         <script src="{{ url_for('static', filename='javascript/canvas.js') }}"></script>
         <script type=text/javascript>
             $SCRIPT_ROOT = {{ request.script_root|tojson|safe }};
-            $EXAMPLE_MODEL = "{{ url_for('static', filename='models/model1.json') }}";
+            $EXAMPLE_MODEL = "{{ url_for('static', filename='models/model2.json') }}";
         </script>
     </head>
     <body>
