@@ -1,5 +1,5 @@
 from nose.tools import *
-from synth import *
+from param_synth.synth import *
 import numpy as np
 from numpy.testing import *
 
