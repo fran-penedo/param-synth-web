@@ -424,7 +424,9 @@ def _dreal_check_sat(smt, verbose=False):
                env=dict(os.environ, LD_LIBRARY_PATH=DREAL_LIBS))
     out, err = ps.communicate()
     outlines = out.splitlines()
-    if outlines[0].startswith("delta-sat") or outlines[-1].startswith("delta-sat"):
+    if outlines[0].startswith("delta-sat") or \
+            outlines[-1].startswith("delta-sat") or \
+            outlines[0].startswith("sat"):
         return True, out
     elif outlines[0].startswith("unsat") or outlines[-1].startswith("unsat"):
         return False, out
