@@ -311,6 +311,13 @@ Graph.prototype.select = function(i) {
 };
 
 Graph.prototype.synthesize = function() {
+    var m = this.getModel();
+
+    $.post($SCRIPT_ROOT + "/synthesize", 
+            JSON.stringify(m),
+            function(data){
+
+            }, "json");
 
 };
 
@@ -430,7 +437,7 @@ function getPos(e) {
     } 
     x -= e.target.offsetLeft;
     y -= e.target.offsetTop;
-    return [x, y]
+    return [x, y];
 }
 
 function handleClick(event) {
@@ -439,7 +446,7 @@ function handleClick(event) {
 
     var graph = event.data;
     var p = graph.toScale(x, y);
-    graph.click(p[0], p[1])
+    graph.click(p[0], p[1]);
 }
 
 function handleDblClick(event) {
@@ -448,7 +455,7 @@ function handleDblClick(event) {
 
     var graph = event.data;
     var p = graph.toScale(x, y);
-    graph.dblclick(p[0], p[1])
+    graph.dblclick(p[0], p[1]);
 }
 
 function draw() {

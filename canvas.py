@@ -1,7 +1,8 @@
 from flask import Flask, render_template, request, jsonify
 import lib.param_synth.synth as synth
-from lib.param_synth.synth import CDDMatrix, vrep_pts
+from lib.param_synth.synth import CDDMatrix, CDDMatrixUnion, vrep_pts
 import numpy as np
+import lib.param_synth.graph as graph
 
 app = Flask(__name__)
 app.debug = True
@@ -9,6 +10,7 @@ app.debug = True
 @app.route("/")
 def index():
     return render_template('index.html')
+
 
 @app.route("/partition", methods=['POST'])
 def partition():
@@ -19,12 +21,40 @@ def partition():
     return jsonify(partition=build_partition(poly, constrs))
 
 
-def build_partition(poly_vs, constrs):
-    poly = CDDMatrix([[1] + v for v in poly_vs], False)
+@app.route("/synthesize", methods=['POST'])
+def synthesize():
+    data = request.get_json(True)
+    constrs = data["constrs"]
+    poly = data["poly"]
+    psets = data["pars"]
+    init = data["init"]
+    spec = data["spec"]
 
+    pwa = synth.PWASystem(CDDMatrix([[1] + v for v in poly], False),
+                    to_hrep(constrs),
+                    [CDDMatrixUnion(
+                        CDDMatrix([[1] +
+                                   [float(i) for i in pset["A"].split(" ")] +
+                                   v for v in pset["b_space"]], False))
+                    for pset in psets])
+    ts = synth.PWATS(pwa, init=[init], ltl=spec)
+
+    tree = synth.synthesize(ts)
+    leaf = next(synth.leaves(tree))
+    graph.draw_path_graphs(leaf, "temp/foo")
+
+
+def to_hrep(constrs):
     constrs_vect = [[b[1] - a[1], a[0] - b[0]] for a, b in constrs]
     constrs_vect = [[- cons[0][0] * v[0] - cons[0][1] * v[1]] + v
                     for cons, v in zip(constrs, constrs_vect)]
+    return constrs_vect
+
+
+def build_partition(poly_vs, constrs):
+    poly = CDDMatrix([[1] + v for v in poly_vs], False)
+
+    constrs_vect = to_hrep(constrs)
 
     p = sorted(synth.partition(poly, constrs_vect).items())
 

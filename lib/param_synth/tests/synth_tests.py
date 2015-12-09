@@ -87,7 +87,7 @@ def pwats_test():
     pwa = PWASystem(poly, constr, psets)
     ts = PWATS(pwa)
 
-    print pwa.states
+    #print pwa.states
     desired = np.array([[1, 1, 0, 0], [0, 0, 1, 0], [1, 1, 0, 1], [0, 0, 0, 0]])
     assert_array_equal(ts.ts.toarray(), desired)
 
@@ -142,7 +142,7 @@ def synthesize_test():
     ts = PWATS(pwa, init=["00"], ltl='G state = s00')
 
     tree = synthesize(ts)
-    print tree
+    #print tree
 
 
 def dreal_connect_smt_test():
@@ -151,7 +151,8 @@ def dreal_connect_smt_test():
                     [1, 1, 0, 0, 1, 0, 1], [1, 1, 0, 0, 1, 1, 1]], False)
     Xl2 = CDDMatrix([[1, 1, 0], [1, 1, 1], [1, 2, 0], [1, 2, 1]], False)
 
-    print dreal_connect_smt(Xl1, Pl1, Xl2, 2)
+    print dreal_connect_smt(Xl1, Pl1, Xl2)
+
 
 def dreal_find_p_test():
     Xl1 = CDDMatrix([[1, 0, 0], [1, 0, 1], [1, 1, 0], [1, 1, 1]], False)
@@ -159,7 +160,7 @@ def dreal_find_p_test():
                     [1, 1, 0, 0, 1, 0, 1], [1, 1, 0, 0, 1, 1, 1]], False)
     Xl2 = CDDMatrix([[1, 1, 0], [1, 1, 1], [1, 2, 0], [1, 2, 1]], False)
 
-    smt = dreal_connect_smt(Xl1, Pl1, Xl2, 2)
+    smt = dreal_connect_smt(Xl1, Pl1, Xl2)
     p = dreal_find_p(smt)
     print p
 
