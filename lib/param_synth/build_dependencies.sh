@@ -1,7 +1,7 @@
 #!/bin/bash
 
-DREAL=dReal-3.15.09.01-linux-shared-libs.tar.gz
-DREALURL=https://github.com/dreal/dreal3/releases/download/v3.15.09.01/$DREAL
+DREAL=dReal-3.15.09.01-linux-shared-libs
+DREALURL=https://github.com/dreal/dreal3/releases/download/v3.15.09.01/${DREAL}.tar.gz
 NUSMV=http://nusmv.fbk.eu/distrib/NuSMV-2.5.4.tar.gz
 
 mkdir lib
@@ -17,4 +17,4 @@ cd ../..
 
 #dReal
 wget -O - $DREALURL | tar -xz -C lib
-mv lib/$DREAL lib/dReal
+mv -f lib/$DREAL lib/dReal
