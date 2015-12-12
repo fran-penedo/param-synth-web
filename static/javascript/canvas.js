@@ -42,6 +42,7 @@ function Graph(config) {
     this.scaleX = this.canvas.width / this.rangeX;
     this.scaleY = this.canvas.height / this.rangeY;
 
+
     // draw x and y axis
     this.erase();
 }
@@ -180,11 +181,13 @@ Graph.prototype.fromScale = function(x, y) {
 };
 
 
-Graph.prototype.drawPoly = function(poly) {
+Graph.prototype.drawPoly = function(poly, fill) {
+    fill = typeof fill !== 'undefined' ? fill : false;
+    var p = this.poly;
     this.poly = poly;
     this.poly_closed = true;
-    this.erase();
-    this.renderPoly();
+    this.renderPoly(fill);
+    this.poly = p;
 };
 
 Graph.prototype.erase = function() {
@@ -193,7 +196,8 @@ Graph.prototype.erase = function() {
     this.drawYAxis();
 };
 
-Graph.prototype.renderPoly = function() {
+Graph.prototype.renderPoly = function(fill) {
+    fill = typeof fill !== 'undefined' ? fill : false;
     var context = this.context;
     context.save();
     this.transformContext();
@@ -208,7 +212,12 @@ Graph.prototype.renderPoly = function() {
         if (this.poly_closed) {
             context.closePath();
         }
-        context.stroke();
+        if (fill) {
+            this.context.fillStyle = 'rgba(0, 255, 0, 0.2)'
+            context.fill();
+        } else {
+            context.stroke();
+        }
     }
     context.restore();
 };
@@ -307,16 +316,29 @@ Graph.prototype.select = function(i) {
     var p = this.partition[i];
     $("#System_Mode").val(p.name);
     $("#Coefficients_Matrix").val(p.A);
+    this.par_canvas.erase();
+    this.par_canvas.poly = p.b_space;
     this.par_canvas.drawPoly(p.b_space);
+    if (p.b_space_synth) {
+        for (var i = 0; i < p.b_space_synth.length; i++) {
+            this.par_canvas.drawPoly(p.b_space_synth[i], true);
+        }
+    }
 };
 
 Graph.prototype.synthesize = function() {
     var m = this.getModel();
+    var graph = this;
 
     $.post($SCRIPT_ROOT + "/synthesize", 
             JSON.stringify(m),
             function(data){
-
+                psets = data['psets']
+                for (var i = 0; i < graph.partition.length; i++) {
+                    var p = graph.partition[i];
+                    p.b_space_synth = psets[i];
+                }
+                console.log(data)
             }, "json");
 
 };

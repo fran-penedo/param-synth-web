@@ -1,8 +1,9 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 import lib.param_synth.synth as synth
 from lib.param_synth.synth import CDDMatrix, CDDMatrixUnion, vrep_pts
 import numpy as np
 import lib.param_synth.graph as graph
+import math
 
 app = Flask(__name__)
 app.debug = True
@@ -40,8 +41,38 @@ def synthesize():
     ts = synth.PWATS(pwa, init=[init], ltl=spec)
 
     tree = synth.synthesize(ts)
-    leaf = next(synth.leaves(tree))
+    leaf = next(l for l in synth.leaves(tree) if l.node.feas)
+
     graph.draw_path_graphs(leaf, "temp/foo")
+
+    pwa = leaf.node.ts._pwa
+    vs = []
+    for l in pwa.states:
+        if l == synth.PWASystem.OUT: continue
+        pset = pwa.eqs[l].pset
+        cents = [centroid(p)[4:] for p in pset.components()]
+        verts = [vrep_pts(p)[:,4:].tolist() for p in pset.components()]
+        verts = [
+            sorted(v,
+                   key=lambda p: math.atan2(p[1]-cent[1],p[0]-cent[0]))
+             for v, cent in zip(verts, cents)]
+        vs.append(verts)
+    return jsonify(psets=vs)
+
+
+@app.route("/synthesize2", methods=['POST'])
+def synthesize2():
+    vs1 = [[2,0], [0, 2], [-2, 0]]
+    vs2 = [[3,0], [0, 4], [-2, 0]]
+
+    vs = [[vs1, vs2] for i in range(4)]
+    return jsonify(psets=vs)
+
+
+@app.route("/get_image", methods=['GET'])
+def get_image():
+    f = request.args['file']
+    return send_file('temp/' + f)
 
 
 def to_hrep(constrs):
