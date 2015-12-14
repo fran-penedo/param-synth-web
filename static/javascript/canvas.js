@@ -1,3 +1,16 @@
+// from http://stackoverflow.com/questions/610406/javascript-equivalent-to-printf-string-format
+if (!String.prototype.format) {
+  String.prototype.format = function() {
+    var args = arguments;
+    return this.replace(/{(\d+)}/g, function(match, number) { 
+      return typeof args[number] != 'undefined'
+        ? args[number]
+        : match
+      ;
+    });
+  };
+}
+
 function Graph(config) {
     // user defined properties
     var qcanvas = $("#" + config.canvasId);
@@ -326,6 +339,12 @@ Graph.prototype.select = function(i) {
     }
 };
 
+Graph.prototype.selectGraph = function(i) {
+    $("#graph" + this.selected_graph).attr("hidden", "true");
+    $("#graph" + i).removeAttr("hidden");
+    this.selected_graph = i;
+};
+
 Graph.prototype.synthesize = function() {
     var m = this.getModel();
     var graph = this;
@@ -333,11 +352,19 @@ Graph.prototype.synthesize = function() {
     $.post($SCRIPT_ROOT + "/synthesize", 
             JSON.stringify(m),
             function(data){
-                psets = data['psets']
+                res = data['result'];
+                psets = res['psets']
                 for (var i = 0; i < graph.partition.length; i++) {
                     var p = graph.partition[i];
                     p.b_space_synth = psets[i];
                 }
+                for (var i = 0; i < res['imgs'].length; i++) {
+                    img = "<img src={0}/get_image?file={1} id=graph{2} hidden=true/>"
+                    $("#graphs").append(img.format(
+                                $SCRIPT_ROOT, res['imgs'][i], i));
+                }
+                graph.selected_graph = 0;
+                graph.selectGraph(0);
                 console.log(data)
             }, "json");
 

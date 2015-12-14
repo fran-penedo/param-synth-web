@@ -8,6 +8,8 @@ import math
 app = Flask(__name__)
 app.debug = True
 
+IMG_DIR = "temp/"
+
 @app.route("/")
 def index():
     return render_template('index.html')
@@ -43,7 +45,8 @@ def synthesize():
     tree = synth.synthesize(ts)
     leaf = next(l for l in synth.leaves(tree) if l.node.feas)
 
-    graph.draw_path_graphs(leaf, "temp/foo")
+    prefix = "foo"
+    imgs = graph.draw_path_graphs(leaf, prefix, directory=IMG_DIR)
 
     pwa = leaf.node.ts._pwa
     vs = []
@@ -57,7 +60,9 @@ def synthesize():
                    key=lambda p: math.atan2(p[1]-cent[1],p[0]-cent[0]))
              for v, cent in zip(verts, cents)]
         vs.append(verts)
-    return jsonify(psets=vs)
+
+    result = {"psets":vs, "imgs": imgs}
+    return jsonify(result=result)
 
 
 @app.route("/synthesize2", methods=['POST'])
@@ -72,7 +77,7 @@ def synthesize2():
 @app.route("/get_image", methods=['GET'])
 def get_image():
     f = request.args['file']
-    return send_file('temp/' + f)
+    return send_file(IMG_DIR + f)
 
 
 def to_hrep(constrs):

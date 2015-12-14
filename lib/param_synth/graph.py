@@ -9,7 +9,6 @@ def build_graph(ts):
     return g
 
 def path_graphs(leaf):
-    print leaf.node.ts.toNUSMV()
     gs = [build_graph(leaf.node.ts)]
     t = leaf
 
@@ -22,10 +21,15 @@ def path_graphs(leaf):
         t = t.parent
 
 
-    return gs
+    return reversed(gs)
 
-def draw_path_graphs(leaf, prefix=""):
+def draw_path_graphs(leaf, prefix="", directory=""):
     gs = path_graphs(leaf)
+    imgs = []
 
     for i, g in enumerate(gs):
-        g.draw(prefix + "{}.png".format(i), prog='neato')
+        f = prefix + "{}.png".format(i)
+        g.draw(directory + f, prog='neato')
+        imgs.append(f)
+
+    return imgs
