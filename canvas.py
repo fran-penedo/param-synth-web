@@ -48,7 +48,17 @@ def synthesize():
     prefix = "foo"
     imgs = graph.draw_path_graphs(leaf, prefix, directory=IMG_DIR)
 
-    pwa = leaf.node.ts._pwa
+    cur = leaf
+    psets = [psets_vertices(cur.node.ts._pwa)]
+    while cur.parent is not None:
+        psets.append(psets_vertices(cur.parent.node.ts._pwa))
+        cur = cur.parent
+
+    result = {"psets":list(reversed(psets)), "imgs": imgs}
+    return jsonify(result=result)
+
+
+def psets_vertices(pwa):
     vs = []
     for l in pwa.states:
         if l == synth.PWASystem.OUT: continue
@@ -61,8 +71,7 @@ def synthesize():
              for v, cent in zip(verts, cents)]
         vs.append(verts)
 
-    result = {"psets":vs, "imgs": imgs}
-    return jsonify(result=result)
+    return vs
 
 
 @app.route("/synthesize2", methods=['POST'])

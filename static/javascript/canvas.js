@@ -324,6 +324,9 @@ Graph.prototype.saveSelected = function() {
 };
 
 Graph.prototype.select = function(i) {
+    if (i == undefined) {
+        return;
+    }
     this.saveSelected();
     this.selected = i;
     var p = this.partition[i];
@@ -340,9 +343,21 @@ Graph.prototype.select = function(i) {
 };
 
 Graph.prototype.selectGraph = function(i) {
+    if (i < 0) {
+        i = 0;
+    }
+    if (i >= this.synth_b_spaces.length) {
+        i = this.synth_b_spaces.length - 1;
+    }
+    for (var j = 0; j < this.partition.length; j++) {
+        var p = this.partition[j];
+        p.b_space_synth = this.synth_b_spaces[i][j];
+    }
     $("#graph" + this.selected_graph).attr("hidden", "true");
     $("#graph" + i).removeAttr("hidden");
+    $("#index").val("{0}/{1}".format(i, this.synth_b_spaces.length - 1));
     this.selected_graph = i;
+    this.select(this.selected);
 };
 
 Graph.prototype.synthesize = function() {
@@ -353,11 +368,9 @@ Graph.prototype.synthesize = function() {
             JSON.stringify(m),
             function(data){
                 res = data['result'];
-                psets = res['psets']
-                for (var i = 0; i < graph.partition.length; i++) {
-                    var p = graph.partition[i];
-                    p.b_space_synth = psets[i];
-                }
+                psets = res['psets'];
+                graph.synth_b_spaces = psets;
+                $("#graphs").empty();
                 for (var i = 0; i < res['imgs'].length; i++) {
                     img = "<img src={0}/get_image?file={1} id=graph{2} hidden=true/>"
                     $("#graphs").append(img.format(
@@ -527,6 +540,18 @@ function draw() {
     });
     $("#synthesize").click(function(event) {
         myGraph.synthesize();
+    });
+    $("#previous").click(function(event) {
+        myGraph.selectGraph(myGraph.selected_graph - 1);
+    });
+    $("#next").click(function(event) {
+        myGraph.selectGraph(myGraph.selected_graph + 1);
+    });
+    $("#first").click(function(event) {
+        myGraph.selectGraph(0);
+    });
+    $("#last").click(function(event) {
+        myGraph.selectGraph(myGraph.synth_b_spaces.length - 1);
     });
     $("#save").click(function(event) {
         $("#model").val(JSON.stringify(myGraph.getModel()));
